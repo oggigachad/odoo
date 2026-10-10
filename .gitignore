@@ -21,3 +21,4 @@ deploy/.env.production
 .vercel/
 *.tsbuildinfo
 deploy/.admin-credentials.txt
+deploy/current-api-url.txt

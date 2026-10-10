@@ -25,6 +25,8 @@ copy .env.production.example .env.production   # fill in; FRONTEND_URL and CORS_
 ```
 Then build the site with that address and upload `frontend/dist` to Netlify (drag and drop) or set `VITE_API_URL` in Netlify and redeploy: `cd frontend; $env:VITE_API_URL='https://<random>.trycloudflare.com'; npm run build`. For a fixed address use a named Cloudflare tunnel on your own domain, or a real server (below).
 
+**Keep it running after restarts (Option B):** `powershell -ExecutionPolicy Bypass -File deploy\install-autostart.ps1` registers a Windows logon task (`SkylineBackend`) that starts Docker Desktop if it is closed, brings the stack up, opens the tunnel, and restarts the tunnel if it drops. It writes the current public address to `deploy/current-api-url.txt` and a log to `deploy/autostart.log`. Remove it with `-Remove`. After every reboot or tunnel restart the address changes: run `deployebuild-site.ps1` to rebuild the site against it and upload `frontend\dist` again. Also stop Windows from sleeping while plugged in (Settings > System > Power), or the site goes offline. For an address that never changes, use a real server (below) or a named tunnel on your own domain.
+
 ## 1. Backend on the server
 ```bash
 git clone https://github.com/oggigachad/odoo.git /opt/skyline && cd /opt/skyline/deploy
