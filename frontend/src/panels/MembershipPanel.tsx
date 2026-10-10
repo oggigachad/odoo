@@ -175,7 +175,7 @@ export default function MembershipPanel({ memberId, user, onUserChange, duesDisc
             </div>
             <div>
               <div className="text-xs font-black text-emerald-900 uppercase tracking-wide">Active Membership Activated</div>
-              <div className="text-[11px] text-emerald-700">You have verified member status. Your Member Portal & 50% ticket discounts are unlocked.</div>
+              <div className="text-[11px] text-emerald-700">You have verified member status. You now get member prices on tickets and merchandise.</div>
             </div>
           </div>
           <span className="px-3 py-1 rounded-full bg-emerald-200 text-emerald-900 text-xs font-bold shrink-0">
@@ -245,7 +245,7 @@ export default function MembershipPanel({ memberId, user, onUserChange, duesDisc
                         }`}>
                         <div>
                           <span className="font-bold text-xs block text-neutral-900">{t.name}</span>
-                          <span className="text-[10px] text-neutral-500">Unlocks 50% discount on tickets & full member portal</span>
+                          <span className="text-[10px] text-neutral-500">Member prices on tickets and merchandise, plus the member portal</span>
                         </div>
                         <span className="font-black text-[#714B67] text-sm shrink-0">
                           {duesDiscount > 0 ? (

@@ -79,3 +79,11 @@ Data lives in Docker volumes (`postgres_data`, `redis_data`, `minio_data`, `cadd
 
 ## 7. Verified before this guide was written
 The stack was built from scratch and run locally exactly as in step 1 (with `API_DOMAIN=localhost`): tables and the Admin were created automatically, HTTPS and HSTS were served by Caddy, `/docs` was disabled, sign-in worked, picture upload and thumbnail went through MinIO, CSV, Excel and PDF reports (with the logo) and the ticket PDF rendered, CORS accepted the configured site and rejected another, and the frontend built for production with `npm run build`. Not testable without your accounts: your DNS and certificate, live Razorpay keys, Gmail delivery, Vercel or Netlify itself.
+
+## Logins for each role (production)
+Only the first Admin exists after a fresh start, and sign-up always creates a Guest. To create one working login per role plus the current semester and the membership prices (what the Membership tab shows):
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml exec api python -m scripts.role_accounts          # creates what is missing, prints new passwords once
+docker compose --env-file .env.production -f docker-compose.prod.yml exec api python -m scripts.role_accounts --reset  # new passwords for all of them
+```
+It makes `treasurer@company.com` (Treasurer), `officer@company.com` (Officer), `member@student.edu.in` (Member, dues paid) and `guest@student.edu.in` (Guest). Change the prices and add semesters under Dashboard > Admin. Passwords are random, are not shown on the website, and should be changed in Settings after the first sign-in.

@@ -22,3 +22,4 @@ deploy/.env.production
 *.tsbuildinfo
 deploy/.admin-credentials.txt
 deploy/current-api-url.txt
+deploy/.role-credentials.txt
