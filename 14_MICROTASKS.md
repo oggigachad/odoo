@@ -40,10 +40,10 @@ Status legend: ☐ todo · ◐ in progress · ☑ done. Update this file in the 
 ## Group A — Auth and roles
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| A-01 ☐ | `POST /auth/magic-link`: signed 15-min token, email send, always `202`, rate limit | F-05 | Unknown email also `202` |
-| A-02 ☐ | `POST /auth/token`: exchange for 24 h session; cookie for web, bearer for mobile | A-01 | Expired and tampered tokens rejected |
-| A-03 ☐ | Auth dependency + role resolver (officer / treasurer from `leadership_roles` for current year) | A-02, F-07 | Role change takes effect on the next request |
-| A-04 ☐ | `GET /me` | A-03 | Returns member, roles, membership status |
+| A-01 ☑ | `POST /auth/magic-link`: signed 15-min token, email send, always `202`, rate limit | F-05 | Unknown email also `202` |
+| A-02 ☑ | `POST /auth/token`: exchange for 24 h session; cookie for web, bearer for mobile | A-01 | Expired and tampered tokens rejected |
+| A-03 ☑ | Auth dependency + role resolver (officer / treasurer from `leadership_roles` for current year) | A-02, F-07 | Role change takes effect on the next request |
+| A-04 ☑ | `GET /me` | A-03 | Returns member, roles, membership status |
 | A-05 ☐ | Authorization matrix test over all endpoints | A-03 | Matches `09_SECURITY.md` §3 |
 
 ## Group M — Members and memberships (MEM)
