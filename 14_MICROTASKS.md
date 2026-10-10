@@ -7,15 +7,15 @@ Status legend: ☐ todo · ◐ in progress · ☑ done. Update this file in the 
 ## Group F — Foundation
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| F-01 ☐ | Create repo layout (`database/ backend/ web/ docs/ .github/`), `.gitignore`, `.env.example`, copy docs and `schema.sql` | — | Repo pushed; docs render on GitHub |
-| F-02 ☐ | `docker-compose.yml` with Postgres 16; `make db-up`, `make db-reset` | F-01 | Local DB starts and loads schema |
-| F-03 ☐ | Backend scaffold (FastAPI, settings from env, `/health`, `/ready`) | F-01 | `GET /health` returns 200 |
-| F-04 ☐ | SQLAlchemy models mirroring `schema.sql` + Alembic with `0001_baseline` running the SQL file | F-02, F-03 | `alembic upgrade head` from empty DB matches `schema.sql` |
-| F-05 ☐ | Core: error classes, handler producing the standard error shape, `request_id` middleware, JSON logging | F-03 | Every error has `code`, `message`, `request_id` |
-| F-06 ☐ | Money and time helpers (`Decimal`, string serialisation, UTC) | F-03 | Unit tests; JSON money is `"0.00"` format |
+| F-01 ☑ | Create repo layout (`database/ backend/ web/ docs/ .github/`), `.gitignore`, `.env.example`, copy docs and `schema.sql` | — | Repo pushed; docs render on GitHub |
+| F-02 ☑ | `docker-compose.yml` with Postgres 16; `make db-up`, `make db-reset` | F-01 | Local DB starts and loads schema |
+| F-03 ☑ | Backend scaffold (FastAPI, settings from env, `/health`, `/ready`) | F-01 | `GET /health` returns 200 |
+| F-04 ☑ | SQLAlchemy models mirroring `schema.sql` + Alembic with `0001_baseline` running the SQL file | F-02, F-03 | `alembic upgrade head` from empty DB matches `schema.sql` |
+| F-05 ☑ | Core: error classes, handler producing the standard error shape, `request_id` middleware, JSON logging | F-03 | Every error has `code`, `message`, `request_id` |
+| F-06 ☑ | Money and time helpers (`Decimal`, string serialisation, UTC) | F-03 | Unit tests; JSON money is `"0.00"` format |
 | F-07 ☐ | Test harness: real Postgres, per-test rollback, factories for all tables | F-04 | Sample test passes in CI |
-| F-08 ☐ | Web scaffold (Next.js, TypeScript strict, API client with error mapping) | F-01 | Home page builds |
-| F-09 ☐ | Lint and format config (ruff, mypy, eslint, prettier) and pre-commit | F-03, F-08 | Hooks run locally |
+| F-08 ☑ | Web scaffold (Next.js, TypeScript strict, API client with error mapping) | F-01 | Home page builds |
+| F-09 ☑ | Lint and format config (ruff, mypy, eslint, prettier) and pre-commit | F-03, F-08 | Hooks run locally |
 | F-10 ☐ | Sentry in API and web | F-03, F-08 | Test error appears in Sentry |
 
 ## Group CI — Pipelines
