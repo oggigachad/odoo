@@ -6,6 +6,7 @@ Create Date: 2026-10-10 11:00:00.000000
 
 """
 
+import re
 from pathlib import Path
 from typing import Sequence, Union
 
@@ -21,7 +22,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Read and execute schema.sql from the project root or database directory
+    # Read schema.sql from database directory
     sql_path = Path(__file__).resolve().parents[2] / "database" / "schema.sql"
     if not sql_path.exists():
         sql_path = Path(__file__).resolve().parents[3] / "database" / "schema.sql"
@@ -29,12 +30,23 @@ def upgrade() -> None:
     with open(sql_path, "r", encoding="utf-8") as f:
         sql = f.read()
 
-    op.execute(sa.text(sql))
+    # Strip BEGIN and COMMIT since Alembic already manages transactions
+    sql = re.sub(r"^\s*BEGIN\s*;\s*", "", sql, flags=re.MULTILINE | re.IGNORECASE)
+    sql = re.sub(r"^\s*COMMIT\s*;\s*", "", sql, flags=re.MULTILINE | re.IGNORECASE)
+
+    bind = op.get_bind()
+    # If using asyncpg driver directly under SQLAlchemy async engine
+    if bind.dialect.name == "postgresql" and "asyncpg" in bind.dialect.driver:
+        from sqlalchemy.util.concurrency import await_only
+
+        raw_asyncpg = bind.connection.connection._connection
+        await_only(raw_asyncpg.execute(sql))
+    else:
+        op.execute(sa.text(sql))
 
 
 def downgrade() -> None:
-    op.execute(
-        sa.text("""
+    drop_sql = """
         DROP VIEW IF EXISTS club_balance CASCADE;
         DROP VIEW IF EXISTS treasurer_summary CASCADE;
         DROP VIEW IF EXISTS fundraiser_progress CASCADE;
@@ -59,5 +71,12 @@ def downgrade() -> None:
         DROP TABLE IF EXISTS fundraisers CASCADE;
         DROP TABLE IF EXISTS leadership_roles CASCADE;
         DROP TABLE IF EXISTS members CASCADE;
-    """)
-    )
+    """
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql" and "asyncpg" in bind.dialect.driver:
+        from sqlalchemy.util.concurrency import await_only
+
+        raw_asyncpg = bind.connection.connection._connection
+        await_only(raw_asyncpg.execute(drop_sql))
+    else:
+        op.execute(sa.text(drop_sql))
