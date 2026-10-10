@@ -1,0 +1,123 @@
+# Copy to .github/workflows/ci.yml
+# Requires: database/schema.sql, backend/ (requirements*.txt, alembic, tests), web/ (package-lock.json,
+# npm scripts: lint, typecheck, test, build).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    name: database
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sos
+          POSTGRES_PASSWORD: sos
+          POSTGRES_DB: sos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sos -d sos_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: sos
+      PGPASSWORD: sos
+      PGDATABASE: sos_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load schema from scratch
+        run: psql -v ON_ERROR_STOP=1 -f database/schema.sql
+      - name: Smoke-test views
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "SELECT * FROM club_balance;"
+          psql -v ON_ERROR_STOP=1 -c "SELECT * FROM treasurer_summary;"
+          psql -v ON_ERROR_STOP=1 -c "SELECT * FROM event_summary;"
+          psql -v ON_ERROR_STOP=1 -c "SELECT * FROM ticket_availability;"
+          psql -v ON_ERROR_STOP=1 -c "SELECT * FROM fundraiser_progress;"
+          psql -v ON_ERROR_STOP=1 -c "SELECT * FROM active_members;"
+          psql -v ON_ERROR_STOP=1 -c "SELECT * FROM memberships_due_for_renewal;"
+
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sos
+          POSTGRES_PASSWORD: sos
+          POSTGRES_DB: sos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sos -d sos_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+asyncpg://sos:sos@localhost:5432/sos_test
+      JWT_SECRET: ci-only-secret-not-for-production
+      PAYMENT_WEBHOOK_SECRET: ci-only-webhook-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Type check
+        run: mypy app
+      - name: Apply migrations
+        run: alembic upgrade head
+      - name: Tests
+        run: pytest -q --cov=app --cov-fail-under=80
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    env:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
