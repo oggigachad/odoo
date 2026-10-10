@@ -83,7 +83,7 @@ docker-compose.yml       PostgreSQL, Redis, MinIO
 
 ## Deploying
 
-`DEPLOY.md` is the step-by-step production guide: the site on Vercel or Netlify (`frontend/vercel.json`, `frontend/netlify.toml`), the API with PostgreSQL, Redis and MinIO on one Docker server with automatic HTTPS (`deploy/`).
+`DEPLOY.md` is the step-by-step production guide: the site on Netlify (`netlify.toml`, `frontend/netlify.toml`), the API with PostgreSQL, Redis and MinIO on one Docker server with automatic HTTPS (`deploy/`).
 
 ## More documentation
 

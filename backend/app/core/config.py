@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "default-insecure-secret-key-change-in-prod"
     PAYMENT_WEBHOOK_SECRET: str = "default-insecure-webhook-secret"
     FRONTEND_URL: str = "http://localhost:5173"
-    # Extra browser origins allowed to call the API (comma separated), e.g. the Vercel/Netlify site and its custom domain
+    # Extra browser origins allowed to call the API (comma separated), e.g. the Netlify site and its custom domain
     CORS_ORIGINS: str = ""
     SENTRY_DSN: str | None = None
     EMAIL_FROM: str = "noreply@skyline.edu"

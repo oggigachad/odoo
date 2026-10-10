@@ -93,7 +93,7 @@ The work happened in rounds. Each round started from a request, found root cause
 | 7 | Demo data, efficiency, no fallbacks | `seed_demo.py`, 12 indexes, grouped shop query, MinIO-only storage, required ticket key |
 | 8 | Checkout end to end, product popup position | Two server bugs fixed, review step, modals rendered into `document.body` |
 | 9 | Visibility test, docs, security review | Browser sweep (3 roles x 2 sizes), docs rewritten, hardening, Redis incident |
-| 10 | GitHub and production | Docker image, Caddy stack, Vercel/Netlify config, `DEPLOY.md`, this report |
+| 10 | GitHub and production | Docker image, Caddy stack, Netlify config, `DEPLOY.md`, this report |
 
 ---
 
@@ -140,7 +140,7 @@ Rules that keep it maintainable: routers never contain business logic; services 
 | | Development | Production |
 | :--- | :--- | :--- |
 | API | `uvicorn app.main:app --port 8000` | Docker image behind Caddy on 443 |
-| Site | `npm run dev` on 3000 | Static build on Vercel or Netlify |
+| Site | `npm run dev` on 3000 | Static build on Netlify |
 | Postgres / Redis / MinIO | `docker-compose.yml` (Postgres 127.0.0.1:5432, Redis 127.0.0.1:6380, MinIO 127.0.0.1:9000/9001) | `deploy/docker-compose.prod.yml`, no ports published except Caddy's 80/443 |
 | Config | `backend/.env` | `deploy/.env.production` |
 | `APP_ENV` | `development` | `production` (docs off, sign-in codes never echoed, secure cookies, HSTS, weak-secret check) |
@@ -173,7 +173,7 @@ frontend/
   src/panels/               one file per dashboard tab
   src/components/           landing pages, overview charts, designer, notification bell, event page
   public/                   manifest, service worker, icons, logo, videos
-  vercel.json, netlify.toml
+  netlify.toml
 deploy/                     production compose, Caddyfile, env template, backup script
 docker-compose.yml          local services
 *.md                        README, DEPLOY, this report, A_TO_Z guide, WEBSITE_STATUS, ISSUES
@@ -283,7 +283,7 @@ Startup guard (`main.py` lifespan): outside development/test the app refuses to 
 
 **Google sign-in** (`login_with_google`): the ID token is verified server-side against Google and the configured client ID, the e-mail must be verified, and the account **must already exist**; Google can never create an account.
 
-**Sessions:** HS256 JWT valid 24 hours, returned in the body and set as an httpOnly `session` cookie (`Secure` outside development). The API client sends the token as a bearer header, which is what makes a cross-site setup (site on Vercel, API on another domain) work without cross-site cookies.
+**Sessions:** HS256 JWT valid 24 hours, returned in the body and set as an httpOnly `session` cookie (`Secure` outside development). The API client sends the token as a bearer header, which is what makes a cross-site setup (site on Netlify, API on another domain) work without cross-site cookies.
 
 ### 8.3 Roles and permissions (`api/deps.py`)
 
@@ -545,12 +545,12 @@ A selection, with the root cause, because these are the lessons worth keeping.
 ### 15.1 Topology
 
 ```
-Vercel / Netlify  ── static React build ── https://site.example.com
+Netlify  ── static React build ── https://site.example.com         
 Browser ──HTTPS──► Caddy :443 ──► api :8000 ──► postgres / redis / minio     (one Linux server, Docker Compose)
 Razorpay ──webhook──► https://api.example.com/api/v1/webhooks/razorpay
 ```
 
-Vercel and Netlify cannot run this API (long-lived WebSocket, background workers, PostgreSQL, Redis, object storage), which is why the site is static there and the API runs on a server.
+Netlify cannot run this API (long-lived WebSocket, background workers, PostgreSQL, Redis, object storage), which is why the site is static there and the API runs on a server.
 
 ### 15.2 What was added for production
 
@@ -558,18 +558,18 @@ Vercel and Netlify cannot run this API (long-lived WebSocket, background workers
 - `deploy/docker-compose.prod.yml`: Caddy, API, Postgres, Redis (password), MinIO; only Caddy publishes ports; named volumes; health-gated start order.
 - `deploy/Caddyfile`: automatic certificates for `API_DOMAIN`, gzip, HSTS, 10 MB request limit, reverse proxy including WebSockets.
 - `deploy/.env.production.example`: every required variable with comments; `deploy/backup.sh`.
-- `frontend/vercel.json`, `frontend/netlify.toml`: build, single-page-app rewrite, security headers, long cache for hashed assets, `no-cache` for the service worker.
+- `frontend/netlify.toml` (and `netlify.toml` at the repository root): build, single-page-app rewrite, security headers, long cache for hashed assets, `no-cache` for the service worker.
 - App changes: `CORS_ORIGINS` setting, WebSocket origin check, schema auto-creation on an empty database, production refusal of default Admin password, requirements completed, vendor chunk splitting.
 
 ### 15.3 Step by step
 
-The complete runbook is `DEPLOY.md`. In short: (1) server with Docker and a DNS A record for `API_DOMAIN`; (2) clone the repository, fill `deploy/.env.production`, `docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build`; (3) import the repository on Vercel/Netlify with root `frontend` and `VITE_API_URL=https://<API_DOMAIN>`; (4) set `FRONTEND_URL` (and `CORS_ORIGINS`) on the server to the site address and restart; (5) live Razorpay keys and webhook, Gmail App Password, optional Google client; (6) go-live checklist.
+The complete runbook is `DEPLOY.md`. In short: (1) server with Docker and a DNS A record for `API_DOMAIN`; (2) clone the repository, fill `deploy/.env.production`, `docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build`; (3) import the repository on Netlify with base directory `frontend` and `VITE_API_URL=https://<API_DOMAIN>`; (4) set `FRONTEND_URL` (and `CORS_ORIGINS`) on the server to the site address and restart; (5) live Razorpay keys and webhook, Gmail App Password, optional Google client; (6) go-live checklist.
 
 ### 15.4 What was verified, and what could not be
 
 Verified locally by running the production stack from nothing (with `API_DOMAIN=localhost`): schema and Admin created automatically, Caddy served HTTPS with HSTS, `/docs` returned 404, sign-in worked and codes were not echoed, picture upload and thumbnail through MinIO, CSV/Excel/PDF reports with the logo, ticket PDF and event QR, CORS allowed the configured site and refused another, the frontend built for production. The stack idled at about 260 MB of memory.
 
-Not verifiable without your accounts: your DNS and certificate, live Razorpay keys and webhook delivery, Gmail delivery from the server, Vercel/Netlify deployment itself. A real server and domain were not available during this build, so the production system has **not** been started on the internet; everything needed to do so is in the repository.
+Not verifiable without your accounts: your DNS and certificate, live Razorpay keys and webhook delivery, Gmail delivery from the server, the Netlify deployment itself. A real server and domain were not available during this build, so the production system has **not** been started on the internet; everything needed to do so is in the repository.
 
 ---
 

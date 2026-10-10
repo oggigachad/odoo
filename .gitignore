@@ -18,7 +18,6 @@ t.log
 t2.log
 deploy/.env.production
 *.tsbuildinfo
-.vercel/
 *.tsbuildinfo
 deploy/.admin-credentials.txt
 deploy/current-api-url.txt

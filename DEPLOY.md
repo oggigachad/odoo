@@ -1,9 +1,9 @@
 # Deploying Skyline to production
 
-Layout: the **website** (static React build) runs on **Vercel or Netlify**; the **API, PostgreSQL, Redis and MinIO** run together on **one Linux server** with Docker, behind Caddy, which gets and renews HTTPS certificates by itself.
+Layout: the **website** (static React build) runs on **Netlify**; the **API, PostgreSQL, Redis and MinIO** run together on **one Linux server** with Docker, behind Caddy, which gets and renews HTTPS certificates by itself.
 
 ```
-Browser ──► Vercel / Netlify  (https://skyline.example.com)        static site
+Browser ──► Netlify  (https://skyline.example.com)                 static site
    │
    └──────► Caddy (443) ► api ► postgres / redis / minio           https://api.example.com
 ```
@@ -13,7 +13,7 @@ The API must be on HTTPS and on a **domain name** (browsers block an HTTPS site 
 ## 0. What you need
 - A Linux server (Ubuntu 22.04/24.04, 2 GB RAM or more, ports 80 and 443 open) with Docker: `curl -fsSL https://get.docker.com | sh`
 - A domain for the API (`api.example.com`) with an **A record** pointing at the server's IP
-- A Vercel or Netlify account (the site can use any domain they give you)
+- A Netlify account (the site can use the address Netlify gives you or your own domain)
 - Production keys: Gmail App Password(s), Razorpay **live** keys, optional Google OAuth client
 
 ## Option B: no server yet, run the backend on your own PC and publish it with a tunnel
@@ -39,11 +39,11 @@ curl https://api.example.com/api/v1/stats                                       
 ```
 On first start the API creates all tables and the first Admin (`ADMIN_EMAIL` / `ADMIN_PASSWORD`; it refuses the default password in production). Open ports 80 and 443 only; nothing else is published.
 
-## 2. Website on Vercel or Netlify
-0. Two equivalent setups are in the repository: `frontend/vercel.json` + `frontend/netlify.toml` (use when the project root is `frontend`) and `vercel.json` + `netlify.toml` at the repository root (use when you import the whole repository without choosing a root; they build from `frontend` and publish `frontend/dist`).
-1. Import the GitHub repository and set the **root directory to `frontend`** (build `npm run build`, output `dist`; `vercel.json` / `netlify.toml` already contain this, the single-page-app rewrite and security headers).
+## 2. Website on Netlify
+0. Two equivalent Netlify setups are in the repository: `frontend/netlify.toml` (use when the base directory is `frontend`) and `netlify.toml` at the repository root (use when you import the whole repository without choosing a root; they build from `frontend` and publish `frontend/dist`).
+1. Import the GitHub repository and set the **root directory to `frontend`** (build `npm run build`, output `dist`; `netlify.toml` already contains this, the single-page-app rewrite and security headers).
 2. Add environment variables (see `frontend/.env.production.example`): `VITE_API_URL=https://api.example.com` and, if you use it, `VITE_GOOGLE_CLIENT_ID`.
-3. Deploy. Then put the site's final address in the server's `deploy/.env.production` as `FRONTEND_URL` (add any extra addresses, such as the `*.vercel.app` one, to `CORS_ORIGINS`) and restart: `docker compose --env-file .env.production -f docker-compose.prod.yml up -d`.
+3. Deploy. Then put the site's final address in the server's `deploy/.env.production` as `FRONTEND_URL` (add any extra addresses, such as your own domain or a deploy-preview address, to `CORS_ORIGINS`) and restart: `docker compose --env-file .env.production -f docker-compose.prod.yml up -d`.
 
 `FRONTEND_URL` matters: event poster QR codes, e-mail buttons and calendar links all point to it, and the API only accepts browser calls and live-update connections from it and `CORS_ORIGINS`.
 
@@ -79,7 +79,7 @@ Data lives in Docker volumes (`postgres_data`, `redis_data`, `minio_data`, `cadd
 - `frontend/public/signin.mp4` is 72 MB. Compress it (for example to under 8 MB with ffmpeg) before deploying to keep page loads and hosting bandwidth small.
 
 ## 7. Verified before this guide was written
-The stack was built from scratch and run locally exactly as in step 1 (with `API_DOMAIN=localhost`): tables and the Admin were created automatically, HTTPS and HSTS were served by Caddy, `/docs` was disabled, sign-in worked, picture upload and thumbnail went through MinIO, CSV, Excel and PDF reports (with the logo) and the ticket PDF rendered, CORS accepted the configured site and rejected another, and the frontend built for production with `npm run build`. Not testable without your accounts: your DNS and certificate, live Razorpay keys, Gmail delivery, Vercel or Netlify itself.
+The stack was built from scratch and run locally exactly as in step 1 (with `API_DOMAIN=localhost`): tables and the Admin were created automatically, HTTPS and HSTS were served by Caddy, `/docs` was disabled, sign-in worked, picture upload and thumbnail went through MinIO, CSV, Excel and PDF reports (with the logo) and the ticket PDF rendered, CORS accepted the configured site and rejected another, and the frontend built for production with `npm run build`. Not testable without your accounts: your DNS and certificate, live Razorpay keys, Gmail delivery, Netlify itself.
 
 ## Logins for each role (production)
 Only the first Admin exists after a fresh start, and sign-up always creates a Guest. To create one working login per role plus the current semester and the membership prices (what the Membership tab shows):
