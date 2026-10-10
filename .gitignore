@@ -23,3 +23,6 @@ deploy/.env.production
 deploy/.admin-credentials.txt
 deploy/current-api-url.txt
 deploy/.role-credentials.txt
+
+# the built site is committed on purpose (frontend/dist) so it can be deployed straight from the repository
+!frontend/dist/
