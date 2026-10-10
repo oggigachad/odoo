@@ -87,3 +87,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec api py
 docker compose --env-file .env.production -f docker-compose.prod.yml exec api python -m scripts.role_accounts --reset  # new passwords for all of them
 ```
 It makes `treasurer@company.com` (Treasurer), `officer@company.com` (Officer), `member@student.edu.in` (Member, dues paid) and `guest@student.edu.in` (Guest). Change the prices and add semesters under Dashboard > Admin. Passwords are random, are not shown on the website, and should be changed in Settings after the first sign-in.
+
+## Keeping the data (events, shop, members, pictures)
+Everything the site saves is written to PostgreSQL and MinIO, which live in Docker **volumes** (`skyline_postgres_data`, `skyline_minio_data`, `skyline_redis_data`). Restarting Windows, Docker or the containers, `docker compose down` and `up`, and reloading the website never delete it (this was tested). Only `docker compose down -v`, deleting the volumes in Docker Desktop, or losing the disk does.
+- **Backup (Windows):** `powershell -ExecutionPolicy Bypass -File deploy\backup.ps1 -Install` backs up now and schedules a daily 03:00 run to `%USERPROFILE%\Backups\skyline` (database `db_*.sql.gz`, pictures `media_*.zip`, kept 14 days). Copy that folder to another disk or cloud drive regularly.
+- **Restore the database:** `gunzip -c db_<time>.sql.gz | docker exec -i skyline-postgres-1 sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'` into an empty database. **Pictures:** stop MinIO and copy the unzipped folder back to `/data` (`docker cp <folder>/. skyline-minio-1:/data`), then start it.
