@@ -1,0 +1,13 @@
+# HTTPS certificates are issued and renewed automatically for API_DOMAIN (its DNS must point at this server).
+{$API_DOMAIN} {
+	encode gzip
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+	request_body {
+		max_size 10MB
+	}
+	# WebSockets (/ws/updates) pass through reverse_proxy untouched
+	reverse_proxy api:8000
+}

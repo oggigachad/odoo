@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "default-insecure-secret-key-change-in-prod"
     PAYMENT_WEBHOOK_SECRET: str = "default-insecure-webhook-secret"
     FRONTEND_URL: str = "http://localhost:5173"
+    # Extra browser origins allowed to call the API (comma separated), e.g. the Vercel/Netlify site and its custom domain
+    CORS_ORIGINS: str = ""
     SENTRY_DSN: str | None = None
     EMAIL_FROM: str = "noreply@skyline.edu"
     SMTP_HOST: str | None = None
@@ -45,6 +47,13 @@ class Settings(BaseSettings):
     # Who may create an account. Comma separated; a domain also matches its sub-domains.
     STUDENT_EMAIL_DOMAINS: str = "gmail.com,student.edu.in"
     ADMIN_EMAIL_DOMAINS: str = "company.com,company.in"
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        origins = [self.FRONTEND_URL.rstrip("/")] + [o.strip().rstrip("/") for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        if self.APP_ENV != "production":
+            origins += ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"]
+        return list(dict.fromkeys(origins))
 
     @property
     def razorpay_configured(self) -> bool:

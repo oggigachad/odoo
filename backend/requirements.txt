@@ -14,3 +14,7 @@ sentry-sdk[fastapi]>=2.16.0,<3.0.0
 redis>=5.0.0
 reportlab>=4.0.0
 qrcode[pil]>=7.4
+razorpay>=1.4.2
+minio>=7.2.0
+xlsxwriter>=3.2.0
+setuptools>=70

@@ -16,3 +16,4 @@ tokens.json
 backend/scripts/.demo_ids.json
 t.log
 t2.log
+deploy/.env.production

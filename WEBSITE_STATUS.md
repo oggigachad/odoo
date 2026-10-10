@@ -185,3 +185,6 @@ Added in this pass: door check-in now says whether the person is a paid member (
 - Treasury is single-entry in/out, not double-entry.
 - Email depends on the Gmail App Passwords in `.env`; keys shared in chat should be rotated.
 - Store apps (Play Store / App Store) need a Capacitor or TWA wrapper.
+
+## Production deployment (11 Oct 2026)
+Added `DEPLOY.md`, `backend/Dockerfile`, `deploy/` (compose stack with Caddy HTTPS, Postgres, Redis, MinIO, backup script, `.env.production.example`), and `frontend/vercel.json` / `netlify.toml`. The API now creates its own schema on an empty database, refuses the default Admin password in production, takes extra allowed sites from `CORS_ORIGINS`, and only accepts live-update connections from allowed sites. `requirements.txt` was missing razorpay, minio and xlsxwriter and now lists them. The stack was built and exercised locally from scratch (see DEPLOY.md section 7).

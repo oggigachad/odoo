@@ -81,6 +81,10 @@ frontend/src/            app, panels per feature, components, offline check-in
 docker-compose.yml       PostgreSQL, Redis, MinIO
 ```
 
+## Deploying
+
+`DEPLOY.md` is the step-by-step production guide: the site on Vercel or Netlify (`frontend/vercel.json`, `frontend/netlify.toml`), the API with PostgreSQL, Redis and MinIO on one Docker server with automatic HTTPS (`deploy/`).
+
 ## More documentation
 
 - `STUDENT_ORGANIZATION_SYSTEM_A_TO_Z.md` is the full guide: architecture, roles, schema, modules, generated API reference and production notes.

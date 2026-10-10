@@ -79,6 +79,23 @@ def current_semester(today: dt.date) -> tuple[str, dt.date, dt.date]:
     return f"Spring {today.year}", dt.date(today.year, 1, 1), dt.date(today.year, 7, 31)
 
 
+async def _ensure_schema() -> None:
+    """Fresh database: create every table, trigger and view from database/schema.sql."""
+    from pathlib import Path
+
+    async with engine.begin() as conn:
+        exists = (await conn.execute(text("SELECT to_regclass('public.members')"))).scalar_one()
+        if exists:
+            return
+        candidates = [Path(__file__).resolve().parents[2] / "database" / "schema.sql", Path("/database/schema.sql")]
+        sql = next((p for p in candidates if p.exists()), None)
+        if sql is None:
+            raise SystemExit("database/schema.sql not found: cannot create the schema on an empty database.")
+        raw = await conn.get_raw_connection()
+        await raw.driver_connection.execute(sql.read_text(encoding="utf-8"))
+        print("Created the database schema from", sql)
+
+
 async def main(reset: bool, demo: bool) -> None:
     password = os.environ.get("SEED_PASSWORD", "password123")
     accounts = list(ACCOUNTS) if demo else [
@@ -87,6 +104,9 @@ async def main(reset: bool, demo: bool) -> None:
     if not demo:
         password = os.environ.get("ADMIN_PASSWORD", "ChangeMe@123")
     today = dt.date.today()
+    if os.environ.get("APP_ENV") == "production" and password in ("ChangeMe@123", "password123", ""):
+        raise SystemExit("Refusing to create the Admin with a default password in production: set ADMIN_PASSWORD.")
+    await _ensure_schema()
     async with async_session_factory() as s:
         for stmt in DDL:
             await s.execute(text(stmt))

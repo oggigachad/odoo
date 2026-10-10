@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+.git
+backups
+legacy
+*.log
+tokens.json
+.env
+**/.env
+frontend
+!frontend/public/logo.png
+backend/tests
+backend/uploads
