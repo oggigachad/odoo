@@ -1,0 +1,10 @@
+# Run the stack WITHOUT a public server: no Caddy, the API listens on 127.0.0.1:8001 and a tunnel
+# (Cloudflare quick tunnel, ngrok, ...) publishes it over HTTPS.
+#   docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.tunnel.yml up -d --build
+#   cloudflared tunnel --url http://127.0.0.1:8001
+services:
+  caddy:
+    profiles: ["https"]
+  api:
+    ports:
+      - "127.0.0.1:8001:8000"

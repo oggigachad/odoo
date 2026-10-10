@@ -20,3 +20,4 @@ deploy/.env.production
 *.tsbuildinfo
 .vercel/
 *.tsbuildinfo
+deploy/.admin-credentials.txt

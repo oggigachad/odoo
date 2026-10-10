@@ -16,6 +16,15 @@ The API must be on HTTPS and on a **domain name** (browsers block an HTTPS site 
 - A Vercel or Netlify account (the site can use any domain they give you)
 - Production keys: Gmail App Password(s), Razorpay **live** keys, optional Google OAuth client
 
+## Option B: no server yet, run the backend on your own PC and publish it with a tunnel
+Good for a demo or evaluation; not for lasting production (the PC must stay on, Docker Desktop running, and the free Cloudflare address changes whenever the tunnel restarts).
+```powershell
+cd deploy
+copy .env.production.example .env.production   # fill in; FRONTEND_URL and CORS_ORIGINS = your Netlify address
+./start-tunnel.ps1                              # starts the stack (no Caddy) and prints https://<random>.trycloudflare.com
+```
+Then build the site with that address and upload `frontend/dist` to Netlify (drag and drop) or set `VITE_API_URL` in Netlify and redeploy: `cd frontend; $env:VITE_API_URL='https://<random>.trycloudflare.com'; npm run build`. For a fixed address use a named Cloudflare tunnel on your own domain, or a real server (below).
+
 ## 1. Backend on the server
 ```bash
 git clone https://github.com/oggigachad/odoo.git /opt/skyline && cd /opt/skyline/deploy
