@@ -3,7 +3,7 @@
 > **Platform**: Skyline Student Association Unified Management System  
 > **Problem Statement**: Student Organization System — Build one system to run events, members, and money in one place  
 > **Target Audience**: Campus Leaders, Club Officers, Treasurers, Software Developers, and Evaluators  
-> **Stack**: FastAPI (Python 3.13), React 18 + Vite (TypeScript), PostgreSQL 16, Redis 7, MinIO, Razorpay, Tailwind CSS v4, Docker Compose  
+> **Stack**: FastAPI (Python 3.13), React 19 + Vite (TypeScript), PostgreSQL 16, Redis 7, MinIO, Razorpay, Tailwind CSS v4, Docker Compose  
 > **Last updated**: 11 Oct 2026. This guide describes what is built and running, and it is the source of truth next to `WEBSITE_STATUS.md` (change log) and `ISSUES.md` (issue history).
 
 ---
@@ -121,7 +121,7 @@ The system is constructed with a decoupled, high-performance architecture emphas
 ```
 
 ### 3.1 Frontend Architecture
-* **Framework**: React 18 + TypeScript with Vite, Tailwind v4, TT Firs Neue typography, white plain surfaces with hairline dividers (no card boxes), purple `#714B67` accents.
+* **Framework**: React 19 + TypeScript with Vite, Tailwind v4, TT Firs Neue typography, white plain surfaces with hairline dividers (no card boxes), purple `#714B67` accents.
 * **Installable PWA**: manifest, icons and a shell-caching service worker; "Add to home screen" on phones.
 * **Data and live updates**: one API client (`apiClient.ts`); every successful write broadcasts a topic over the WebSocket and open panels refetch through `useLiveRefresh`, so there are no manual reloads.
 * **Offline door check-in**: IndexedDB attendee list plus a queue of scans that syncs through `/checkin/batch` when the connection returns.

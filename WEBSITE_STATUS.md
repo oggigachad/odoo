@@ -188,3 +188,6 @@ Added in this pass: door check-in now says whether the person is a paid member (
 
 ## Production deployment (11 Oct 2026)
 Added `DEPLOY.md`, `backend/Dockerfile`, `deploy/` (compose stack with Caddy HTTPS, Postgres, Redis, MinIO, backup script, `.env.production.example`), and `frontend/vercel.json` / `netlify.toml`. The API now creates its own schema on an empty database, refuses the default Admin password in production, takes extra allowed sites from `CORS_ORIGINS`, and only accepts live-update connections from allowed sites. `requirements.txt` was missing razorpay, minio and xlsxwriter and now lists them. The stack was built and exercised locally from scratch (see DEPLOY.md section 7).
+
+## Localhost stall (11 Oct 2026)
+Tests and local requests took about 2 s each because `localhost` resolved to IPv6 `::1` first while Postgres listens on IPv4 only (it was rebound to 127.0.0.1). Database and MinIO URLs now use `127.0.0.1`; the slow ticket test went from 36 s to 1.3 s and the full suite passes in about 24 s. See `PROJECT_REPORT.md` for the full report.

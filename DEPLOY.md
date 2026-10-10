@@ -28,6 +28,7 @@ curl https://api.example.com/api/v1/stats                                       
 On first start the API creates all tables and the first Admin (`ADMIN_EMAIL` / `ADMIN_PASSWORD`; it refuses the default password in production). Open ports 80 and 443 only; nothing else is published.
 
 ## 2. Website on Vercel or Netlify
+0. Two equivalent setups are in the repository: `frontend/vercel.json` + `frontend/netlify.toml` (use when the project root is `frontend`) and `vercel.json` + `netlify.toml` at the repository root (use when you import the whole repository without choosing a root; they build from `frontend` and publish `frontend/dist`).
 1. Import the GitHub repository and set the **root directory to `frontend`** (build `npm run build`, output `dist`; `vercel.json` / `netlify.toml` already contain this, the single-page-app rewrite and security headers).
 2. Add environment variables (see `frontend/.env.production.example`): `VITE_API_URL=https://api.example.com` and, if you use it, `VITE_GOOGLE_CLIENT_ID`.
 3. Deploy. Then put the site's final address in the server's `deploy/.env.production` as `FRONTEND_URL` (add any extra addresses, such as the `*.vercel.app` one, to `CORS_ORIGINS`) and restart: `docker compose --env-file .env.production -f docker-compose.prod.yml up -d`.

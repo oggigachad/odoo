@@ -3,7 +3,7 @@ import os
 os.environ["APP_ENV"] = "test"
 # Tests run against a dedicated database so they never pollute live data (create it from database/schema.sql).
 os.environ["DATABASE_URL"] = os.environ.get(
-    "TEST_DATABASE_URL", "postgresql+asyncpg://skyline_admin:skyline_secure_password_2026@localhost:5432/skyline_test"
+    "TEST_DATABASE_URL", "postgresql+asyncpg://skyline_admin:skyline_secure_password_2026@127.0.0.1:5432/skyline_test"
 )
 os.environ.setdefault("REDIS_URL", "redis://:skyline_redis_token_2026@127.0.0.1:6380/1")
 os.environ.setdefault("JWT_SECRET", "skyline_super_secure_jwt_secret_token_512_bits_key")

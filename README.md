@@ -5,7 +5,7 @@ One system for a student club's **events, members and money**: sign-ups and dues
 | | |
 | :--- | :--- |
 | Backend | FastAPI (Python 3.13), SQLAlchemy 2 + asyncpg, PostgreSQL 16, Redis 7, MinIO, Razorpay |
-| Frontend | React 18 + TypeScript, Vite, Tailwind v4, PWA |
+| Frontend | React 19 + TypeScript, Vite, Tailwind v4, PWA |
 | Roles | Admin, Treasurer/Accountant, Officer, Member, Guest (decided by the server on every request) |
 
 ## Quick start
@@ -19,7 +19,7 @@ docker compose up -d
 # 2. Backend
 cd backend
 pip install -r requirements.txt
-cp ../.env.example .env            # then fill in the values (see below)
+cp ../.env.example .env            # then fill in the values (see below). Use 127.0.0.1, not localhost, in database URLs (Windows tries IPv6 first and every connection stalls ~2 s)
 python -m scripts.bootstrap        # creates tables, indexes and the first Admin
 python -m uvicorn app.main:app --port 8000
 
@@ -87,6 +87,7 @@ docker-compose.yml       PostgreSQL, Redis, MinIO
 
 ## More documentation
 
+- `PROJECT_REPORT.md` is the full report from zero to production: design, architecture, crucial code explained, bugs and lessons, deployment and operations.
 - `STUDENT_ORGANIZATION_SYSTEM_A_TO_Z.md` is the full guide: architecture, roles, schema, modules, generated API reference and production notes.
 - `WEBSITE_STATUS.md` is the change log and the "Current state" of what was verified.
 - `ISSUES.md` is the issue history and the security review.
