@@ -1,160 +1,93 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { Mail, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
-interface EmailInputProps {
+export const DEFAULT_EMAIL_DOMAIN = 'gmail.com'
+
+/** "name" becomes "name@gmail.com"; anything the user typed with an "@" is left exactly as typed. */
+export function formatSmartEmail(raw: string, domain: string = DEFAULT_EMAIL_DOMAIN): string {
+  const t = raw.trim()
+  if (!t) return ''
+  return t.includes('@') ? t : `${t}@${domain}`
+}
+
+/** The greyed-out part shown after what the user typed: the whole "@gmail.com", or the rest of "gmail.com" once they type "@g...". */
+function ghostFor(typed: string, domain: string): string {
+  if (!typed.trim()) return ''
+  const at = typed.indexOf('@')
+  if (at === -1) return `@${domain}`
+  const part = typed.slice(at + 1).toLowerCase()
+  return part.length < domain.length && domain.startsWith(part) ? domain.slice(part.length) : ''
+}
+
+interface Props {
   value: string
-  onChange: (value: string) => void
-  onValidate?: (isValid: boolean, errorMsg?: string) => void
+  onChange: (email: string) => void
   placeholder?: string
-  label?: string
-  required?: boolean
+  invalid?: boolean
+  domain?: string
   className?: string
-  checkDuplicate?: boolean
+  autoFocus?: boolean
 }
 
-export function formatSmartEmail(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) return ''
-  // If user hasn't typed an '@', automatically append '@gmail.com'
-  if (!trimmed.includes('@')) {
-    return `${trimmed}@gmail.com`
-  }
-  return trimmed
-}
+/**
+ * Email field that fills in "@gmail.com" for you. Type just the name and the rest appears greyed out and is used as the
+ * address; type "@" (or click into the ending) to use another domain instead. Tab, the right arrow or leaving the field
+ * writes the completion into the box so it can be edited like normal text.
+ */
+export default function SmartEmailInput({ value, onChange, placeholder = 'yourname', invalid = false, domain = DEFAULT_EMAIL_DOMAIN, className = '', autoFocus }: Props) {
+  const [typed, setTyped] = useState(value)
+  const input = useRef<HTMLInputElement>(null)
 
-export default function SmartEmailInput({
-  value,
-  onChange,
-  onValidate,
-  placeholder = 'username or user@domain.com',
-  label = 'Email Address',
-  required = true,
-  className = '',
-  checkDuplicate = false,
-}: EmailInputProps) {
-  const [internalDisplay, setInternalDisplay] = useState(value)
-  const [error, setError] = useState<string | null>(null)
-  const [checking, setChecking] = useState(false)
-  const [isDuplicate, setIsDuplicate] = useState(false)
-  const checkTimeoutRef = useRef<any>(null)
-
+  // follow changes made from outside (a cleared form, a stored address)
   useEffect(() => {
-    setInternalDisplay(value)
+    if (formatSmartEmail(typed, domain) !== value) setTyped(value)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
 
-  const validateEmailFormat = (email: string): boolean => {
-    if (!email) {
-      if (required) {
-        setError('Email address is required')
-        return false
-      }
-      setError(null)
-      return true
-    }
+  const ghost = ghostFor(typed, domain)
 
-    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-    if (!emailRegex.test(email)) {
-      setError('Please enter a valid email format (e.g., name@domain.com)')
-      return false
-    }
-
-    setError(null)
-    return true
+  const commit = (text: string) => {
+    const full = `${text.trim()}${ghost}`
+    setTyped(full)
+    onChange(full.trim())
   }
 
-  // Handle typing: if user types characters without @, we display what they typed,
-  // but onBlur or submission, we format with @gmail.com
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value
-    setInternalDisplay(raw)
-
-    // Formatted value
-    const formatted = formatSmartEmail(raw)
-    onChange(formatted)
-
-    const isValid = validateEmailFormat(formatted)
-    if (onValidate) {
-      onValidate(isValid, error || undefined)
-    }
-
-    // Server-side duplicate check debounce
-    if (checkDuplicate && isValid && formatted.includes('@')) {
-      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current)
-      setChecking(true)
-      checkTimeoutRef.current = setTimeout(async () => {
-        try {
-          const res = await fetch(`http://localhost:8000/api/v1/auth/check-email?email=${encodeURIComponent(formatted)}`)
-          if (res.ok) {
-            const data = await res.json()
-            if (data.exists) {
-              setIsDuplicate(true)
-              setError('This email is already registered in the system.')
-              if (onValidate) onValidate(false, 'Email already registered')
-            } else {
-              setIsDuplicate(false)
-              if (onValidate) onValidate(true)
-            }
-          }
-        } catch {
-          // ignore network check failures
-        } finally {
-          setChecking(false)
-        }
-      }, 400)
-    } else {
-      setIsDuplicate(false)
-    }
-  }
-
-  const handleBlur = () => {
-    // When user leaves the field, if they didn't include an '@', auto-fill @gmail.com
-    if (internalDisplay.trim() && !internalDisplay.includes('@')) {
-      const completed = `${internalDisplay.trim()}@gmail.com`
-      setInternalDisplay(completed)
-      onChange(completed)
-      validateEmailFormat(completed)
-    }
+  const update = (raw: string) => {
+    setTyped(raw)
+    onChange(formatSmartEmail(raw, domain))
   }
 
   return (
-    <div className={`space-y-1 ${className}`}>
-      {label && (
-        <label className="block text-xs font-semibold text-white/90">
-          {label} {required && <span className="text-rose-400">*</span>}
-        </label>
-      )}
-      <div className="relative">
-        <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
-        <input
-          type="text"
-          value={internalDisplay}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          placeholder={placeholder}
-          className={`w-full pl-10 pr-10 py-2.5 rounded-xl text-xs sm:text-sm border transition-all focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40 ${
-            error
-              ? 'border-rose-400 bg-rose-500/20 text-white placeholder-white/40'
-              : internalDisplay && !error && !checking
-              ? 'border-emerald-400/50 bg-white/10 text-white placeholder-white/40'
-              : 'bg-white/10 border-white/20 text-white placeholder-white/40'
-          }`}
-        />
-        <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
-          {checking ? (
-            <Loader2 className="w-4 h-4 text-[#38bdf8] animate-spin" />
-          ) : internalDisplay && !error ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          ) : error ? (
-            <AlertCircle className="w-4 h-4 text-rose-400" />
-          ) : null}
-        </div>
+    <div className={`relative ${className}`}>
+      <input
+        ref={input}
+        type="text"
+        inputMode="email"
+        autoComplete="email"
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        autoFocus={autoFocus}
+        value={typed}
+        placeholder={placeholder}
+        onChange={e => update(e.target.value)}
+        onBlur={() => { if (ghost) commit(typed) }}
+        onKeyDown={e => {
+          const atEnd = input.current?.selectionStart === typed.length && input.current?.selectionEnd === typed.length
+          if (ghost && atEnd && (e.key === 'Tab' || e.key === 'ArrowRight' || e.key === 'End')) {
+            if (e.key === 'Tab') return commit(typed) // let Tab move on after completing
+            e.preventDefault(); commit(typed)
+          }
+        }}
+        className={`relative z-10 w-full px-3 py-1.5 rounded-xl text-xs sm:text-sm border bg-transparent text-white placeholder-white/40 transition-all focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40 ${
+          invalid ? 'border-rose-400' : 'border-white/20'
+        }`}
+      />
+      {/* background and the greyed-out ending sit behind the input, lined up with its text */}
+      <div className={`absolute inset-0 rounded-xl ${invalid ? 'bg-rose-500/20' : 'bg-white/10'}`} aria-hidden />
+      <div className="absolute inset-0 z-0 flex items-center px-3 py-1.5 border border-transparent text-xs sm:text-sm whitespace-pre overflow-hidden pointer-events-none" aria-hidden>
+        <span className="invisible">{typed}</span>
+        <span className="text-white/40">{ghost}</span>
       </div>
-      {error && <p className="text-[11px] text-rose-300 font-medium pl-1">{error}</p>}
-      {!error && internalDisplay && !internalDisplay.includes('@') && (
-        <p className="text-[10px] text-white/40 pl-1">
-          Auto-completing as <span className="text-[#38bdf8] font-mono">{internalDisplay}@gmail.com</span>
-        </p>
-      )}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import SmartEmailInput from './components/SmartEmailInput'
 import {
   type UserAccount,
   type UserRole,
@@ -354,17 +355,7 @@ export default function AuthPage({ onLoginSuccess, onBackToLanding }: AuthPagePr
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-semibold text-white/90">Email Address *</label>
                   </div>
-                  <input
-                    type="email"
-                    value={signUpEmail}
-                    onChange={(e) => setSignUpEmail(e.target.value)}
-                    placeholder="you@gmail.com or you@student.edu.in"
-                    className={`w-full px-3 py-1.5 rounded-xl text-xs sm:text-sm border transition-all focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40 ${
-                      signUpErrors.email
-                        ? 'border-rose-400 bg-rose-500/20 text-white placeholder-white/40'
-                        : 'bg-white/10 border-white/20 text-white placeholder-white/40'
-                    }`}
-                  />
+                  <SmartEmailInput value={signUpEmail} onChange={setSignUpEmail} placeholder="yourname (or name@student.edu.in)" invalid={!!signUpErrors.email} />
                   {rules && !signUpErrors.email && (
                     <span className="text-[10px] text-white/50 mt-0.5 block">
                       Students: {rules.student_domains.map(d => '@' + d).join(', ')} · Organisation staff: {rules.admin_domains.map(d => '@' + d).join(', ')}
@@ -619,13 +610,7 @@ export default function AuthPage({ onLoginSuccess, onBackToLanding }: AuthPagePr
                 <form onSubmit={handleSignIn} className="space-y-2.5">
                   <div>
                     <label className="block text-xs font-semibold mb-1 text-white/90">Email Address</label>
-                    <input
-                      type="email"
-                      value={signInEmail}
-                      onChange={(e) => setSignInEmail(e.target.value)}
-                      placeholder="you@gmail.com"
-                      className="w-full px-3 py-1.5 rounded-xl text-xs sm:text-sm border bg-white/10 border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40"
-                    />
+                    <SmartEmailInput value={signInEmail} onChange={setSignInEmail} placeholder="yourname" />
                   </div>
 
                   <div>
@@ -663,13 +648,7 @@ export default function AuthPage({ onLoginSuccess, onBackToLanding }: AuthPagePr
                       <label className="text-xs font-semibold text-white/90">Email Address for OTP</label>
                     </div>
                     <div className="flex gap-2">
-                      <input
-                        type="email"
-                        value={signInEmail}
-                        onChange={(e) => setSignInEmail(e.target.value)}
-                        placeholder="you@gmail.com"
-                        className="flex-1 px-3 py-1.5 rounded-xl text-xs sm:text-sm border bg-white/10 border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40"
-                      />
+                      <SmartEmailInput className="flex-1" value={signInEmail} onChange={setSignInEmail} placeholder="yourname" />
                       <button
                         type="button"
                         onClick={handleGenerateSignInOtp}
