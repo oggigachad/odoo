@@ -16,8 +16,8 @@ Automation that keeps `main` always releasable. The working CI file is `github-w
 
 ## 2. `ci.yml` behaviour
 1. **database:** start Postgres 16, load `database/schema.sql` with `ON_ERROR_STOP`, smoke-test the views.
-2. **backend:** Python 3.12, install dependencies, `ruff check`, `ruff format --check`, `mypy`, `alembic upgrade head`, `pytest` with coverage gate (80%).
-3. **web:** Node 22, `npm ci`, lint, type-check, unit tests, production build.
+2. **backend:** Python 3.12, a Postgres 16 service and a Redis 7 service, install dependencies, `ruff check`, `ruff format --check`, `mypy`, `alembic upgrade head`, `pytest` with coverage gate (80%). Tests use the real Postgres and the real Redis.
+3. **web:** Node 22, `npm ci`, lint, type-check, unit tests (Vitest), production build (`vite build`).
 Concurrency: a new push cancels the older run for the same branch. Permissions: read-only by default.
 Prerequisite: the `backend/` and `web/` projects exist with the scripts named in the file (`lint`, `typecheck`, `test`, `build`).
 
@@ -26,7 +26,7 @@ Prerequisite: the `backend/` and `web/` projects exist with the scripts named in
 |---|---|---|
 | `STAGING_DATABASE_URL`, `PRODUCTION_DATABASE_URL` | Environment secrets | Deploy migrations |
 | `DEPLOY_TOKEN` (host-specific) | Environment secret | Deploy API |
-| `VERCEL_TOKEN`, org and project IDs | Environment secrets | Deploy web |
+| `WEB_DEPLOY_TOKEN` (host-specific; Vercel token and project IDs if Vercel hosts the static build) | Environment secrets | Deploy web |
 | `EXPO_TOKEN` | Repository secret | Mobile builds |
 | `SENTRY_AUTH_TOKEN` | Environment secret | Source maps |
 CI itself needs **no** production secrets. Pull requests from forks never receive secrets.
@@ -46,7 +46,7 @@ CI itself needs **no** production secrets. Pull requests from forks never receiv
 2. Merge to `main`; staging deploys automatically; smoke-test.
 3. Tag `vX.Y.Z`; production workflow waits for approval.
 4. Deploy order: **migrations first**, then API, then web. Migrations must be backward compatible with the previous API version.
-5. Post-deploy smoke checks: `/ready`, sign-in, load events page, one test ticket purchase in test mode (staging) or a ₹1 live check (production, refund afterwards).
+5. Post-deploy smoke checks: `/ready` (database up, Redis status shown), the three login pages load (`/login`, `/officer/login`, `/treasurer/login`), a deep link such as `/officer/login` opens directly, load events page, one test ticket purchase in test mode (staging) or a ₹1 live check (production, refund afterwards).
 6. If checks fail: roll back to the previous image and run the migration `downgrade` only if it is safe (`13_PRODUCTION_CHECKLIST.md`).
 
 ## 7. Deploy workflow shape (to fill once hosting is chosen)

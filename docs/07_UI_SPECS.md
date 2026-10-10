@@ -32,25 +32,48 @@ Light theme at launch; dark theme later only if requested.
 | Role | Primary navigation |
 |---|---|
 | Visitor | Home, Events, Announcements, Shop, Sign in |
-| Member | Home, Events, Shop, My stuff (membership, tickets, orders, expenses, tasks) |
+| Member | Home, Events, Shop, My stuff (membership, tickets, orders, expenses, tasks), Sign out |
 | Officer | Adds **Manage** (members, events, check-in, announcements, shop, fundraisers) and **Finance** |
 | Treasurer | Officer plus expense decisions |
+
+### 3.1 Login pages by role (`D-029`)
+Three pages, one flow. Each says plainly who it is for, so nobody has to guess.
+| Page | Heading | For | Fields and links | Lands on |
+|---|---|---|---|---|
+| `/login` | "Member sign in" | Members, and visitors | Email, "Send me a link", "New here? Sign up" | My stuff |
+| `/officer/login` | "Officer sign in" | Elected officers | Email, "Send me a link". No sign-up link; a line says officer access is given by the elected team | Manage |
+| `/treasurer/login` | "Treasurer sign in" | The treasurer | Email, "Send me a link". No sign-up link | Treasurer dashboard |
+Each page links to the other two ("Not an officer? Member sign in").
+
+After "Send me a link" the page shows "Check your email. The link works once and lasts 15 minutes." with a "Send again" button that waits for the rate limit. The emailed link opens `/auth/callback`, which shows "Signing you in…" and then moves on.
+
+Route guards (convenience only; the API enforces roles):
+| Route area | Needs | If missing |
+|---|---|---|
+| `/`, `/events`, `/announcements`, `/shop` | Nothing | — |
+| `/me/*` (My stuff) | Member | Go to `/login`, then come back to the same page |
+| `/officer/*` (Manage, Finance) | Officer or Treasurer | Not signed in: `/officer/login`. Signed in without the role: "No access" page |
+| `/treasurer/*` (dashboard, expense decisions) | Treasurer | Not signed in: `/treasurer/login`. Signed in without the role: "No access" page |
+
+The "No access" page says "This account is not set up as an officer" (or treasurer), and offers "Go to My stuff" and "Sign out". Menus show only what the person's roles allow; the Treasurer sees the Officer menu plus the dashboard.
 
 ## 4. Screens
 ### Public and member
 | Screen | Contents |
 |---|---|
 | Home | Next event card, latest 3 announcements, membership status strip (if signed in) |
-| Sign in | Email field, "Send me a link", confirmation message |
-| Sign up | Name, email, optional phone |
+| Sign in | Three role pages (§3.1): email field, "Send me a link", "Check your email" confirmation, link-used or link-expired message with "Send a new link" |
+| Sign up | Name, email, optional phone. Member page only |
+| No access | Which area needs which role, link to My stuff, Sign out |
 | Events | Upcoming list: title, date, venue, "from ₹…", seats-left badge |
-| Event detail | Details, ticket types with member / non-member price, quantity, holder name + email per ticket, member price badge when the email matches an active member, "Pay ₹…" |
-| Payment status | Waiting, success with tickets, failed with retry, hold-expired message |
+| Event detail | Details, ticket types with member / non-member price, seats left and non-member seats left, quantity, holder name + email per ticket, member price badge when the email matches an active member, "Pay ₹…". When non-member seats are gone, a non-member holder gets "Sold out for non-members" and members can still buy |
+| Payment status | Waiting, success with tickets, failed with retry, hold-expired message, "your seat was gone, you have been refunded" message (payment arrived after the hold was released) |
 | My tickets | Cards with QR code (large, high contrast), event, holder, status |
 | Announcements | Newest first: title, date, author, body |
-| Shop | Product grid; product page with size chips showing "Only N left" or "Sold out"; price shows member price when eligible |
-| Cart / checkout | Items, total, "Pay ₹…", 15-minute hold notice |
-| My membership | Status (Active / Expired / Unpaid), valid until, "Renew" button |
+| Shop | Product grid; product page with size chips showing "Only N left" or "Sold out"; price shows member price when eligible; for non-members a line "N left for non-members" and "Sold out for non-members" when their share is used up |
+| Cart / checkout | Items, total, "Pay ₹…", 15-minute hold notice. Non-members enter a name and an email; the order is first come, first served within the non-member limit |
+| Join or renew | Choose a semester, then a membership type (name and dues shown), "Pay ₹…". A paid membership for the next semester is shown as "Starts on {date}" |
+| My membership | Status (Active / Starts later / Expired / Unpaid), semester, type, valid until (semester end), "Renew" button that opens Join or renew |
 | My orders | Status and items |
 | Submit expense | Description, amount, date, optional event or fundraiser, receipt upload, submit |
 | My tasks | Tasks assigned to me, change status |
@@ -58,13 +81,14 @@ Light theme at launch; dark theme later only if requested.
 ### Officer
 | Screen | Contents |
 |---|---|
-| Members | Search, filter active, row: name, status badge, valid until |
-| Member detail | Profile, memberships, record cash dues |
-| Verify member | Single search box, large Active / Not active result with expiry (MEM-4) |
-| Event manager | Create or edit event, ticket types, prices, seat limit, live seats left, summary (sold, attended, revenue) |
+| Members | Search, filter active, row: name, status badge, semester, type, valid until |
+| Member detail | Profile, memberships by semester, record cash dues |
+| Semesters and types | Add or edit semesters (name, start, end; overlap is refused) and membership types (name, dues per semester, offered on or off) |
+| Verify member | Single search box, large Active / Not active result with semester, type and expiry (MEM-4) |
+| Event manager | Create or edit event, ticket types, prices, seat limit, non-member seat limit (0 = members only), live seats left in total and for non-members, summary (sold, attended, revenue) |
 | **Door check-in** | See §5.1 |
 | Announcement composer | Title, body, "Post and email all members" with recipient count confirmation |
-| Shop manager | Products, sizes, stock editor, orders list with status filter |
+| Shop manager | Products, sizes, stock editor, non-member limit per product (0 = members only) with units taken and left, orders list with status filter |
 | Fundraiser board | Columns **To do / In progress / Done**, task card: title, assignee avatar-initials, due date; header: progress bar (done / total) and raised vs goal |
 | Expense queue | Tabs Submitted, Approved, Reimbursed, Rejected; receipt viewer; Approve, Reject, Mark reimbursed (treasurer) |
 | **Treasurer dashboard** | See §5.2 |
@@ -121,6 +145,7 @@ Table below with ledger rows (date, category, amount, who), filter by date and c
 │ Spring Gala                  │
 │ Sat 14 Nov · 7 pm · Main Hall│
 │ 38 seats left                │
+│ 12 left for non-members      │
 ├──────────────────────────────┤
 │ General                      │
 │ Member ₹300  Non-member ₹500 │
@@ -138,6 +163,8 @@ Table below with ledger rows (date, category, amount, who), filter by date and c
 | Error | Message from `08_ERROR_HANDLING.md`, retry button, request ID in small text |
 | Offline (mobile) | Banner "You're offline"; ticket QR stays visible from the last load |
 | Sold out | Disabled button labelled "Sold out" |
+| Sold out for non-members | Disabled button labelled "Sold out for non-members" for non-member holders or buyers; members keep a working button while seats or stock remain |
+| Numbers a little old | Seats-left counts and other reports can lag by up to 60 s (cached copy). The pay button always works until the server says otherwise, then shows the sold-out message |
 
 ## 7. Forms
 - Validate on blur and on submit; messages next to the field; never clear the user's input after an error.

@@ -1,6 +1,6 @@
 # 00 — Master Rules
 
-Rules for every contributor and every AI coding assistant working on the **Student Organization System (SOS)**. If a rule here conflicts with another document, this file wins, then log the conflict in `15_DECISIONS.md`.
+Rules for every contributor and every AI coding assistant working on **Oddoskyline** (the student organization system for the Skyline Student Association). If a rule here conflicts with another document, this file wins, then log the conflict in `15_DECISIONS.md`.
 
 ## 1. Source-of-truth order
 When documents disagree, the higher one wins:
@@ -15,14 +15,15 @@ When documents disagree, the higher one wins:
 ## 2. Scope rule (most important)
 - Build **only** what the brief describes: members and memberships, events and tickets, announcements, merchandise, fundraisers, treasurer finances.
 - Anything else (new feature, new table, new column, new vendor) needs a `Proposed` entry in `15_DECISIONS.md` **before** any code is written.
-- The only intentional additions beyond the brief are AdMob (mobile client, Phase 2) and the infrastructure needed to run the brief's features (login, payments gateway, email, file storage). Each is logged in `15_DECISIONS.md`.
+- The only intentional additions beyond the brief are AdMob (mobile client, Phase 2) and the infrastructure needed to run the brief's features (role-based login, payments gateway, email, file storage, Redis speed layer). Each is logged in `15_DECISIONS.md`.
 
 ## 3. Stack rules
 | Layer | Choice (see `15_DECISIONS.md`) |
 |---|---|
-| Database | PostgreSQL 16 only. No other datastore. |
+| Database | PostgreSQL 16 is the only system of record. |
+| Speed layer | Redis 7, run by the club in Docker Compose, with four jobs only (`D-028`): 30 to 60 s report copies, rate limits, one-time sign-in links, the email queue. PostgreSQL stays the single source of truth, seat holds included. Everything in Redis can be lost without losing a record. |
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 |
-| Web | Next.js (App Router) + TypeScript |
+| Web | React + Vite + TypeScript (single-page app) with role-based login pages (`D-027`, `D-029`) |
 | Mobile (Phase 2) | Expo / React Native + `react-native-google-mobile-ads` |
 | CI | GitHub Actions |
 
@@ -32,6 +33,8 @@ When documents disagree, the higher one wins:
 - Schema changes happen **only** through a numbered migration. Never edit a deployed table by hand.
 - Financial rows (`payments`, `expenses`, `tickets`, `orders`) are never hard-deleted by the API.
 - Never trust the client for prices, roles, or stock. The server computes them.
+- Never decide a sale, a payment, a check-in, a seat hold, or a role from Redis. Read PostgreSQL inside the transaction; Redis only speeds up reports and sign-in. Redis is not used for seat holds, so the last seat is always decided in one locked database step.
+- Hiding a screen in the web app is not access control. Every API endpoint enforces its own role.
 - Use parameterised queries / ORM only. No string-built SQL.
 
 ## 5. Code rules
@@ -71,6 +74,8 @@ A microtask is done only when all are true:
 ## 9. Forbidden
 - Floats for money
 - Client-supplied prices, roles, or user IDs trusted as-is
+- Storing anything in Redis that has no TTL (the `queue:emails` list is the one exception), or that cannot be lost
+- Using Redis for seat holds, or as the only copy of any record
 - Deleting financial records
 - Ads on check-in, payment, or treasurer screens
 - Skipping CI or force-pushing to `main`

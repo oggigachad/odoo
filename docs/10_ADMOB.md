@@ -3,7 +3,7 @@
 > **Not part of the original brief.** AdMob was requested separately, so it is scoped narrowly (`D-014`) and kept out of every money, door, and treasurer flow. Verify the current AdMob program policies and store requirements before each release; they change.
 
 ## 1. Where it applies
-- AdMob serves **mobile apps** (Android / iOS). It does not run on the Next.js website. Web ads would need AdSense, which is out of scope.
+- AdMob serves **mobile apps** (Android / iOS). It does not run on the React website. Web ads would need AdSense, which is out of scope.
 - Phase 2 only: ads exist in the Expo app (`mobile/`), never in the API or database.
 
 ## 2. Setup checklist
@@ -50,11 +50,11 @@ Also: no ad near buttons that could cause accidental taps, no ad that overlaps c
 - iOS: if personalised ads are enabled, add the App Tracking Transparency prompt and a clear `NSUserTrackingUsageDescription`.
 - Set a conservative maximum ad content rating (start with **PG**) and block sensitive ad categories in the AdMob console.
 - The club's members are mostly adults, but minors may join. Do not enable personalised ads for users known to be under the age of consent; revisit if the signup collects date of birth (it does not today).
-- The app shares no SOS data (names, emails, orders) with ad networks. Only the SDK's standard ad request data leaves the device.
+- The app shares no Oddoskyline data (names, emails, orders) with ad networks. Only the SDK's standard ad request data leaves the device.
 - Disclose ads and data use in the privacy policy and store forms.
 
 ## 7. Revenue handling
-- AdMob revenue is paid to the AdMob account holder, **not** recorded in the SOS database (the schema has no category for it by design).
+- AdMob revenue is paid to the AdMob account holder, **not** recorded in the Oddoskyline database (the schema has no category for it by design).
 - Decide and record in `15_DECISIONS.md` (`D-015`) who owns the account and how ad income reaches the club. If it should appear in treasurer totals, that needs a proposal to extend `payments.category`, which is a schema change.
 
 ## 8. Testing
