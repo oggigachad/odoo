@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -54,6 +56,35 @@ class LeadershipRole(Base):
     __table_args__ = (UniqueConstraint("member_id", "position", "term_year", name="uq_member_position_year"),)
 
 
+class Semester(Base):
+    __tablename__ = "semesters"
+
+    semester_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    starts_on: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    ends_on: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+
+    memberships: Mapped[List["Membership"]] = relationship(back_populates="semester")
+
+    __table_args__ = (
+        CheckConstraint("ends_on > starts_on", name="chk_semester_dates"),
+        Index("semesters_dates_idx", "starts_on", "ends_on"),
+    )
+
+
+class MembershipType(Base):
+    __tablename__ = "membership_types"
+
+    membership_type_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    dues_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    is_offered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    memberships: Mapped[List["Membership"]] = relationship(back_populates="membership_type")
+
+    __table_args__ = (CheckConstraint("dues_amount >= 0", name="chk_type_dues_amount"),)
+
+
 class Fundraiser(Base):
     __tablename__ = "fundraisers"
 
@@ -82,6 +113,7 @@ class Payment(Base):
     fundraiser_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("fundraisers.fundraiser_id"), nullable=True
     )
+    external_ref: Mapped[Optional[str]] = mapped_column(Text, unique=True, nullable=True)
 
     member: Mapped[Optional["Member"]] = relationship(back_populates="payments")
     fundraiser: Mapped[Optional["Fundraiser"]] = relationship(back_populates="payments")
@@ -100,8 +132,10 @@ class Membership(Base):
 
     membership_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     member_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("members.member_id"), nullable=False)
-    valid_from: Mapped[datetime.date] = mapped_column(Date, nullable=False)
-    valid_until: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    semester_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("semesters.semester_id"), nullable=False)
+    membership_type_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("membership_types.membership_type_id"), nullable=False
+    )
     dues_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     payment_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("payments.payment_id"), nullable=True)
     renewal_reminder_sent_at: Mapped[Optional[datetime.datetime]] = mapped_column(
@@ -109,12 +143,14 @@ class Membership(Base):
     )
 
     member: Mapped["Member"] = relationship(back_populates="memberships")
+    semester: Mapped["Semester"] = relationship(back_populates="memberships")
+    membership_type: Mapped["MembershipType"] = relationship(back_populates="memberships")
     payment: Mapped[Optional["Payment"]] = relationship()
 
     __table_args__ = (
         CheckConstraint("dues_amount >= 0", name="chk_dues_amount"),
-        CheckConstraint("valid_until > valid_from", name="chk_membership_dates"),
-        Index("memberships_member_idx", "member_id", "valid_until"),
+        UniqueConstraint("member_id", "semester_id", name="uq_member_semester"),
+        Index("memberships_member_idx", "member_id", "semester_id"),
     )
 
 
@@ -140,6 +176,7 @@ class TicketType(Base):
     member_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     non_member_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     seat_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    non_member_seat_limit: Mapped[int] = mapped_column(Integer, nullable=False)
 
     event: Mapped["Event"] = relationship(back_populates="ticket_types")
     tickets: Mapped[List["Ticket"]] = relationship(back_populates="ticket_type")
@@ -148,6 +185,10 @@ class TicketType(Base):
         CheckConstraint("member_price >= 0", name="chk_ticket_member_price"),
         CheckConstraint("non_member_price >= 0", name="chk_ticket_non_member_price"),
         CheckConstraint("seat_limit > 0", name="chk_ticket_seat_limit"),
+        CheckConstraint(
+            "non_member_seat_limit >= 0 AND non_member_seat_limit <= seat_limit",
+            name="chk_ticket_non_member_seat_limit",
+        ),
         UniqueConstraint("event_id", "name", name="uq_event_ticket_name"),
     )
 
@@ -162,7 +203,9 @@ class Ticket(Base):
     holder_email: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     price_paid: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     payment_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("payments.payment_id"), nullable=True)
-    ticket_code: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4, unique=True, nullable=False)
+    ticket_code: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False
+    )
     purchased_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=func.now())
     checked_in_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     checked_in_by: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("members.member_id"), nullable=True)
@@ -194,14 +237,16 @@ class Product(Base):
     product_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)  # non-member price
     member_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    non_member_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     variants: Mapped[List["ProductVariant"]] = relationship(back_populates="product")
 
     __table_args__ = (
         CheckConstraint("price >= 0", name="chk_product_price"),
         CheckConstraint("member_price >= 0", name="chk_product_member_price"),
+        CheckConstraint("non_member_limit >= 0", name="chk_product_non_member_limit"),
     )
 
 
@@ -225,16 +270,25 @@ class Order(Base):
     __tablename__ = "orders"
 
     order_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    member_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("members.member_id"), nullable=False)
+    member_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("members.member_id"), nullable=True)
+    buyer_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    buyer_email: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ordered_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=func.now())
     status: Mapped[str] = mapped_column(Text, nullable=False, default="placed")
     payment_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("payments.payment_id"), nullable=True)
 
-    member: Mapped["Member"] = relationship(back_populates="orders")
+    member: Mapped[Optional["Member"]] = relationship(back_populates="orders")
     items: Mapped[List["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
     payment: Mapped[Optional["Payment"]] = relationship()
 
-    __table_args__ = (CheckConstraint("status IN ('placed', 'paid', 'cancelled')", name="chk_order_status"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('placed', 'paid', 'cancelled')", name="chk_order_status"),
+        CheckConstraint(
+            "(member_id IS NOT NULL) OR (buyer_name IS NOT NULL AND buyer_email IS NOT NULL)",
+            name="chk_order_buyer_required",
+        ),
+        Index("orders_member_idx", "member_id"),
+    )
 
 
 class OrderItem(Base):

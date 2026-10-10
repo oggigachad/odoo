@@ -12,9 +12,12 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DATABASE_URL: str = "postgresql+asyncpg://sos:sos@localhost:5432/sos_dev"
     SYNC_DATABASE_URL: str = "postgresql://sos:sos@localhost:5432/sos_dev"
+    REDIS_URL: str = "redis://localhost:6379/0"
     JWT_SECRET: str = "default-insecure-secret-key-change-in-prod"
     PAYMENT_WEBHOOK_SECRET: str = "default-insecure-webhook-secret"
+    FRONTEND_URL: str = "http://localhost:5173"
     SENTRY_DSN: str | None = None
+    EMAIL_FROM: str = "noreply@skyline.edu"
 
 
 settings = Settings()

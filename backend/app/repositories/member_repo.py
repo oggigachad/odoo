@@ -1,28 +1,34 @@
 import datetime
 from decimal import Decimal
-from typing import Sequence
+from typing import Optional, Sequence
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import DuplicateEmailError, NotFoundError
-from app.models.schema_models import LeadershipRole, Member, Membership
+from app.core.errors import (
+    DuplicateEmailError,
+    MembershipExistsError,
+    MembershipTypeNotOfferedError,
+    NotFoundError,
+    SemesterOverlapError,
+)
+from app.models.schema_models import LeadershipRole, Member, Membership, MembershipType, Semester
 
 
 class MemberRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_by_id(self, member_id: int) -> Member | None:
+    async def get_by_id(self, member_id: int) -> Optional[Member]:
         result = await self.session.execute(select(Member).where(Member.member_id == member_id))
         return result.scalars().first()
 
-    async def get_by_email(self, email: str) -> Member | None:
+    async def get_by_email(self, email: str) -> Optional[Member]:
         result = await self.session.execute(select(Member).where(func.lower(Member.email) == email.lower()))
         return result.scalars().first()
 
-    async def create(self, full_name: str, email: str, phone: str | None) -> Member:
+    async def create(self, full_name: str, email: str, phone: Optional[str]) -> Member:
         member = Member(
             full_name=full_name.strip(),
             email=email.strip().lower(),
@@ -38,7 +44,7 @@ class MemberRepository:
             await self.session.rollback()
             raise DuplicateEmailError() from err
 
-    async def update(self, member_id: int, full_name: str | None, phone: str | None) -> Member:
+    async def update(self, member_id: int, full_name: Optional[str], phone: Optional[str]) -> Member:
         member = await self.get_by_id(member_id)
         if not member:
             raise NotFoundError("Member not found.")
@@ -51,7 +57,7 @@ class MemberRepository:
         return member
 
     async def search(
-        self, query: str | None, active: bool | None, limit: int = 20, offset: int = 0
+        self, query: Optional[str], active: Optional[bool], limit: int = 20, offset: int = 0
     ) -> tuple[Sequence[Member], int]:
         stmt = select(Member)
         if query:
@@ -60,18 +66,23 @@ class MemberRepository:
 
         today = datetime.date.today()
         if active is True:
-            stmt = stmt.join(Membership, Membership.member_id == Member.member_id).where(
-                Membership.payment_id.is_not(None),
-                Membership.valid_from <= today,
-                Membership.valid_until >= today,
+            stmt = (
+                stmt.join(Membership, Membership.member_id == Member.member_id)
+                .join(Semester, Semester.semester_id == Membership.semester_id)
+                .where(
+                    Membership.payment_id.is_not(None),
+                    Semester.starts_on <= today,
+                    Semester.ends_on >= today,
+                )
             )
         elif active is False:
             active_subquery = (
                 select(Membership.member_id)
+                .join(Semester, Semester.semester_id == Membership.semester_id)
                 .where(
                     Membership.payment_id.is_not(None),
-                    Membership.valid_from <= today,
-                    Membership.valid_until >= today,
+                    Semester.starts_on <= today,
+                    Semester.ends_on >= today,
                 )
                 .scalar_subquery()
             )
@@ -85,7 +96,9 @@ class MemberRepository:
         result = await self.session.execute(stmt)
         return result.scalars().all(), total
 
-    async def lookup(self, query: str) -> tuple[Member, bool, datetime.date | None] | None:
+    async def lookup(
+        self, query: str
+    ) -> Optional[tuple[Member, bool, Optional[datetime.date], Optional[str], Optional[str]]]:
         q = query.strip().lower()
         stmt = (
             select(Member)
@@ -98,22 +111,25 @@ class MemberRepository:
             return None
 
         today = datetime.date.today()
+        # Find active or latest paid membership with semester and type
         membership_stmt = (
-            select(Membership)
+            select(Membership, Semester, MembershipType)
+            .join(Semester, Semester.semester_id == Membership.semester_id)
+            .join(MembershipType, MembershipType.membership_type_id == Membership.membership_type_id)
             .where(
                 Membership.member_id == member.member_id,
                 Membership.payment_id.is_not(None),
-                Membership.valid_from <= today,
-                Membership.valid_until >= today,
             )
-            .order_by(Membership.valid_until.desc())
+            .order_by(Semester.ends_on.desc())
         )
         membership_res = await self.session.execute(membership_stmt)
-        membership = membership_res.scalars().first()
+        row = membership_res.first()
 
-        is_active = membership is not None
-        valid_until = membership.valid_until if membership else None
-        return member, is_active, valid_until
+        if row:
+            ms, sem, mt = row
+            is_active = sem.starts_on <= today <= sem.ends_on
+            return member, is_active, sem.ends_on, sem.name, mt.name
+        return member, False, None, None, None
 
     async def get_roles_for_year(self, member_id: int, term_year: int) -> Sequence[str]:
         result = await self.session.execute(
@@ -126,62 +142,173 @@ class MemberRepository:
 
     async def has_active_membership(self, member_id: int, today: datetime.date) -> bool:
         result = await self.session.execute(
-            select(Membership.membership_id).where(
+            select(Membership.membership_id)
+            .join(Semester, Semester.semester_id == Membership.semester_id)
+            .where(
                 Membership.member_id == member_id,
                 Membership.payment_id.is_not(None),
-                Membership.valid_from <= today,
-                Membership.valid_until >= today,
+                Semester.starts_on <= today,
+                Semester.ends_on >= today,
             )
         )
         return result.scalars().first() is not None
 
-    async def get_latest_valid_until(self, member_id: int) -> datetime.date | None:
+    async def get_latest_valid_until(self, member_id: int) -> Optional[datetime.date]:
         result = await self.session.execute(
-            select(Membership.valid_until)
+            select(Semester.ends_on)
+            .join(Membership, Membership.semester_id == Semester.semester_id)
             .where(Membership.member_id == member_id, Membership.payment_id.is_not(None))
-            .order_by(Membership.valid_until.desc())
+            .order_by(Semester.ends_on.desc())
         )
         return result.scalars().first()
 
-    # Memberships
-    async def create_membership(
-        self, member_id: int, valid_from: datetime.date, valid_until: datetime.date, dues_amount: Decimal
-    ) -> Membership:
-        membership = Membership(
-            member_id=member_id,
-            valid_from=valid_from,
-            valid_until=valid_until,
-            dues_amount=dues_amount,
-        )
-        self.session.add(membership)
-        await self.session.flush()
-        await self.session.refresh(membership)
-        return membership
+    # -----------------------------------------------------------------
+    # Semesters (D-024)
+    # -----------------------------------------------------------------
+    async def create_semester(self, name: str, starts_on: datetime.date, ends_on: datetime.date) -> Semester:
+        if ends_on <= starts_on:
+            raise SemesterOverlapError("Semester end date must be after start date.")
+        semester = Semester(name=name.strip(), starts_on=starts_on, ends_on=ends_on)
+        self.session.add(semester)
+        try:
+            await self.session.flush()
+            await self.session.refresh(semester)
+            return semester
+        except IntegrityError as err:
+            await self.session.rollback()
+            raise SemesterOverlapError("Semester name already exists or dates overlap an existing semester.") from err
 
-    async def get_memberships_for_member(self, member_id: int) -> Sequence[Membership]:
-        result = await self.session.execute(
-            select(Membership).where(Membership.member_id == member_id).order_by(Membership.valid_from.desc())
-        )
+    async def get_semesters(self) -> Sequence[Semester]:
+        result = await self.session.execute(select(Semester).order_by(Semester.starts_on.desc()))
         return result.scalars().all()
 
-    async def get_membership_by_id(self, membership_id: int) -> Membership | None:
-        result = await self.session.execute(select(Membership).where(Membership.membership_id == membership_id))
-        return result.scalars().first()
+    async def get_semester_by_id(self, semester_id: int) -> Optional[Semester]:
+        return await self.session.get(Semester, semester_id)
+
+    # -----------------------------------------------------------------
+    # Membership Types (D-024)
+    # -----------------------------------------------------------------
+    async def create_membership_type(self, name: str, dues_amount: Decimal, is_offered: bool = True) -> MembershipType:
+        mtype = MembershipType(name=name.strip(), dues_amount=dues_amount, is_offered=is_offered)
+        self.session.add(mtype)
+        try:
+            await self.session.flush()
+            await self.session.refresh(mtype)
+            return mtype
+        except IntegrityError as err:
+            await self.session.rollback()
+            raise NotFoundError("Membership type with this name already exists.") from err
+
+    async def get_membership_types(self, active_only: bool = False) -> Sequence[MembershipType]:
+        stmt = select(MembershipType)
+        if active_only:
+            stmt = stmt.where(MembershipType.is_offered.is_(True))
+        stmt = stmt.order_by(MembershipType.dues_amount.asc())
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_membership_type_by_id(self, membership_type_id: int) -> Optional[MembershipType]:
+        return await self.session.get(MembershipType, membership_type_id)
+
+    async def update_membership_type(
+        self,
+        membership_type_id: int,
+        name: Optional[str] = None,
+        dues_amount: Optional[Decimal] = None,
+        is_offered: Optional[bool] = None,
+    ) -> MembershipType:
+        mtype = await self.get_membership_type_by_id(membership_type_id)
+        if not mtype:
+            raise NotFoundError("Membership type not found.")
+        if name is not None:
+            mtype.name = name.strip()
+        if dues_amount is not None:
+            mtype.dues_amount = dues_amount
+        if is_offered is not None:
+            mtype.is_offered = is_offered
+        await self.session.flush()
+        await self.session.refresh(mtype)
+        return mtype
+
+    # -----------------------------------------------------------------
+    # Memberships (D-024)
+    # -----------------------------------------------------------------
+    async def create_membership(
+        self,
+        member_id: int,
+        semester_id: int,
+        membership_type_id: int,
+    ) -> Membership:
+        # Check type is offered
+        mtype = await self.get_membership_type_by_id(membership_type_id)
+        if not mtype or not mtype.is_offered:
+            raise MembershipTypeNotOfferedError()
+
+        # Check semester exists
+        semester = await self.get_semester_by_id(semester_id)
+        if not semester:
+            raise NotFoundError("Semester not found.")
+
+        # Check if already exists for member and semester
+        existing = await self.session.execute(
+            select(Membership).where(
+                Membership.member_id == member_id,
+                Membership.semester_id == semester_id,
+            )
+        )
+        if existing.scalars().first():
+            raise MembershipExistsError()
+
+        membership = Membership(
+            member_id=member_id,
+            semester_id=semester_id,
+            membership_type_id=membership_type_id,
+            dues_amount=mtype.dues_amount,  # Snapshot price at purchase
+        )
+        self.session.add(membership)
+        try:
+            await self.session.flush()
+            await self.session.refresh(membership)
+            return membership
+        except IntegrityError as err:
+            await self.session.rollback()
+            raise MembershipExistsError() from err
+
+    async def get_memberships_for_member(self, member_id: int) -> Sequence[tuple[Membership, Semester, MembershipType]]:
+        stmt = (
+            select(Membership, Semester, MembershipType)
+            .join(Semester, Semester.semester_id == Membership.semester_id)
+            .join(MembershipType, MembershipType.membership_type_id == Membership.membership_type_id)
+            .where(Membership.member_id == member_id)
+            .order_by(Semester.starts_on.desc())
+        )
+        result = await self.session.execute(stmt)
+        return result.all()
+
+    async def get_membership_by_id(self, membership_id: int) -> Optional[Membership]:
+        return await self.session.get(Membership, membership_id)
 
     async def get_expiring_memberships(self, days: int = 30) -> Sequence[Membership]:
         today = datetime.date.today()
         target = today + datetime.timedelta(days=days)
-        result = await self.session.execute(
-            select(Membership).where(
+        # Paid, renewal reminder not sent, ends within 30 days, and no paid later semester
+        stmt = (
+            select(Membership)
+            .join(Semester, Semester.semester_id == Membership.semester_id)
+            .where(
+                Membership.payment_id.is_not(None),
                 Membership.renewal_reminder_sent_at.is_(None),
-                Membership.valid_until >= today,
-                Membership.valid_until <= target,
+                Semester.ends_on >= today,
+                Semester.ends_on <= target,
             )
         )
+        result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    # -----------------------------------------------------------------
     # Leadership Roles
-    async def get_leadership_roles(self, term_year: int | None = None) -> Sequence[tuple[LeadershipRole, str]]:
+    # -----------------------------------------------------------------
+    async def get_leadership_roles(self, term_year: Optional[int] = None) -> Sequence[tuple[LeadershipRole, str]]:
         stmt = (
             select(LeadershipRole, Member.full_name)
             .join(Member, Member.member_id == LeadershipRole.member_id)

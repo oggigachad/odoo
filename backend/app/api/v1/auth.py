@@ -18,10 +18,11 @@ async def request_magic_link(
 ) -> dict[str, str]:
     """Request a 15-minute magic login link.
 
+    Stored in Redis with 15m TTL and email enqueued.
     Always returns 202 without revealing if email is registered.
     """
     service = AuthService(db)
-    await service.request_magic_link(payload.email)
+    await service.request_magic_link(payload.email, payload.portal)
     return {"message": "If the email is recognized, a magic sign-in link has been sent."}
 
 
@@ -46,6 +47,13 @@ async def exchange_token(
     )
 
     return TokenResponse(token=session_token, token_type="bearer", expires_in=86400)
+
+
+@router.post("/logout")
+async def logout(response: Response) -> dict[str, str]:
+    """Clear session cookie."""
+    response.delete_cookie(key="session")
+    return {"message": "Logged out successfully"}
 
 
 @router.get("/me", response_model=MemberInfo, tags=["Profile"])

@@ -8,7 +8,7 @@ class APIException(Exception):
         message: str,
         status_code: int = 400,
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
@@ -21,7 +21,7 @@ class ValidationError(APIException):
         self,
         message: str = "Please check the highlighted fields.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="VALIDATION_ERROR", message=message, status_code=422, details=details)
 
 
@@ -30,7 +30,7 @@ class UnauthenticatedError(APIException):
         self,
         message: str = "Please sign in again.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="UNAUTHENTICATED", message=message, status_code=401, details=details)
 
 
@@ -39,7 +39,7 @@ class ForbiddenError(APIException):
         self,
         message: str = "You don't have access to this.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="FORBIDDEN", message=message, status_code=403, details=details)
 
 
@@ -48,7 +48,7 @@ class NotFoundError(APIException):
         self,
         message: str = "We couldn't find that.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="NOT_FOUND", message=message, status_code=404, details=details)
 
 
@@ -57,7 +57,7 @@ class DuplicateEmailError(APIException):
         self,
         message: str = "This email is already registered. Try signing in.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="DUPLICATE_EMAIL", message=message, status_code=409, details=details)
 
 
@@ -66,8 +66,53 @@ class SoldOutError(APIException):
         self,
         message: str = "Sorry, this event is sold out.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="SOLD_OUT", message=message, status_code=409, details=details)
+
+
+class SoldOutNonMemberError(APIException):
+    def __init__(
+        self,
+        message: str = "Non-member seats are sold out for this event.",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(code="SOLD_OUT_NON_MEMBER", message=message, status_code=409, details=details)
+
+
+class NonMemberLimitReachedError(APIException):
+    def __init__(
+        self,
+        message: str = "Non-member order limit reached for this product.",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(code="NON_MEMBER_LIMIT_REACHED", message=message, status_code=409, details=details)
+
+
+class SemesterOverlapError(APIException):
+    def __init__(
+        self,
+        message: str = "Semester dates overlap with an existing semester.",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(code="SEMESTER_OVERLAP", message=message, status_code=409, details=details)
+
+
+class MembershipExistsError(APIException):
+    def __init__(
+        self,
+        message: str = "A membership for this semester already exists.",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(code="MEMBERSHIP_EXISTS", message=message, status_code=409, details=details)
+
+
+class MembershipTypeNotOfferedError(APIException):
+    def __init__(
+        self,
+        message: str = "This membership type is no longer offered.",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(code="MEMBERSHIP_TYPE_NOT_OFFERED", message=message, status_code=400, details=details)
 
 
 class InsufficientStockError(APIException):
@@ -75,7 +120,7 @@ class InsufficientStockError(APIException):
         self,
         message: str = "That size is no longer available in this quantity.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="INSUFFICIENT_STOCK", message=message, status_code=409, details=details)
 
 
@@ -84,7 +129,7 @@ class TicketNotFoundError(APIException):
         self,
         message: str = "Ticket not found.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="TICKET_NOT_FOUND", message=message, status_code=404, details=details)
 
 
@@ -93,7 +138,7 @@ class TicketAlreadyCheckedInError(APIException):
         self,
         message: str = "Already checked in.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="TICKET_ALREADY_CHECKED_IN", message=message, status_code=409, details=details)
 
 
@@ -102,7 +147,7 @@ class TicketUnpaidError(APIException):
         self,
         message: str = "This ticket has not been paid for.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="TICKET_UNPAID", message=message, status_code=409, details=details)
 
 
@@ -111,7 +156,7 @@ class TicketWrongEventError(APIException):
         self,
         message: str = "This ticket is for a different event.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="TICKET_WRONG_EVENT", message=message, status_code=409, details=details)
 
 
@@ -120,7 +165,7 @@ class OrderNotPayableError(APIException):
         self,
         message: str = "This order can no longer be paid. Please place it again.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="ORDER_NOT_PAYABLE", message=message, status_code=409, details=details)
 
 
@@ -129,7 +174,7 @@ class ReservationExpiredError(APIException):
         self,
         message: str = "Your hold expired. Please try again.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="RESERVATION_EXPIRED", message=message, status_code=409, details=details)
 
 
@@ -138,7 +183,7 @@ class PaymentFailedError(APIException):
         self,
         message: str = "Payment didn't go through. You have not been charged.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="PAYMENT_FAILED", message=message, status_code=402, details=details)
 
 
@@ -147,7 +192,7 @@ class PaymentSignatureInvalidError(APIException):
         self,
         message: str = "Invalid webhook signature.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="PAYMENT_SIGNATURE_INVALID", message=message, status_code=400, details=details)
 
 
@@ -156,7 +201,7 @@ class InvalidStateTransitionError(APIException):
         self,
         message: str = "That action isn't possible in the current status.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="INVALID_STATE_TRANSITION", message=message, status_code=409, details=details)
 
 
@@ -165,7 +210,7 @@ class SelfApprovalNotAllowedError(APIException):
         self,
         message: str = "Another officer needs to review your own expense.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="SELF_APPROVAL_NOT_ALLOWED", message=message, status_code=403, details=details)
 
 
@@ -174,7 +219,7 @@ class IdempotencyConflictError(APIException):
         self,
         message: str = "Duplicate request detected.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="IDEMPOTENCY_CONFLICT", message=message, status_code=409, details=details)
 
 
@@ -183,7 +228,7 @@ class RateLimitedError(APIException):
         self,
         message: str = "Too many attempts. Try practical limits.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="RATE_LIMITED", message=message, status_code=429, details=details)
 
 
@@ -192,7 +237,7 @@ class ServiceUnavailableError(APIException):
         self,
         message: str = "Something is wrong on our side. Please try again shortly.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="SERVICE_UNAVAILABLE", message=message, status_code=503, details=details)
 
 
@@ -201,5 +246,5 @@ class InternalError(APIException):
         self,
         message: str = "Something went wrong.",
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         super().__init__(code="INTERNAL_ERROR", message=message, status_code=500, details=details)

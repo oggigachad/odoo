@@ -1,3 +1,4 @@
+import sys
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -6,13 +7,14 @@ from sqlalchemy.pool import NullPool
 from app.core.config import settings
 
 # In test environment, NullPool ensures asyncpg connections are created in the current test loop
-pool_cls = NullPool if settings.APP_ENV == "test" else None
+is_testing = settings.APP_ENV == "test" or "pytest" in sys.modules
+pool_cls = NullPool if is_testing else None
 
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
     future=True,
-    pool_pre_ping=True if settings.APP_ENV != "test" else False,
+    pool_pre_ping=not is_testing,
     poolclass=pool_cls,
 )
 

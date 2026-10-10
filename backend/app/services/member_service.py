@@ -1,8 +1,10 @@
 import datetime
+from decimal import Decimal
+from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError, ValidationError
+from app.core.errors import NotFoundError
 from app.core.helpers import format_money, to_decimal
 from app.repositories.member_repo import MemberRepository
 from app.schemas.members import (
@@ -13,8 +15,12 @@ from app.schemas.members import (
     MemberResponse,
     MembershipCreate,
     MembershipResponse,
+    MembershipTypeCreate,
+    MembershipTypeResponse,
     MemberUpdate,
     PaginatedMembers,
+    SemesterCreate,
+    SemesterResponse,
 )
 
 
@@ -73,7 +79,9 @@ class MemberService:
             valid_until=valid_until,
         )
 
-    async def search_members(self, query: str | None, active: bool | None, limit: int, offset: int) -> PaginatedMembers:
+    async def search_members(
+        self, query: Optional[str], active: Optional[bool], limit: int, offset: int
+    ) -> PaginatedMembers:
         members, total = await self.repo.search(query, active, limit, offset)
         today = datetime.date.today()
         items: list[MemberResponse] = []
@@ -97,58 +105,138 @@ class MemberService:
         res = await self.repo.lookup(query)
         if not res:
             raise NotFoundError("Member not found.")
-        member, is_active, valid_until = res
+        member, is_active, valid_until, sem_name, mtype_name = res
         return MemberLookupResponse(
             member_id=member.member_id,
             full_name=member.full_name,
+            email=member.email,
             is_active=is_active,
             valid_until=valid_until,
+            semester_name=sem_name,
+            membership_type=mtype_name,
         )
 
+    # -----------------------------------------------------------------
+    # Semesters (D-024)
+    # -----------------------------------------------------------------
+    async def create_semester(self, data: SemesterCreate) -> SemesterResponse:
+        semester = await self.repo.create_semester(data.name, data.starts_on, data.ends_on)
+        await self.session.commit()
+        return SemesterResponse(
+            semester_id=semester.semester_id,
+            name=semester.name,
+            starts_on=semester.starts_on,
+            ends_on=semester.ends_on,
+        )
+
+    async def list_semesters(self) -> list[SemesterResponse]:
+        semesters = await self.repo.get_semesters()
+        return [
+            SemesterResponse(
+                semester_id=s.semester_id,
+                name=s.name,
+                starts_on=s.starts_on,
+                ends_on=s.ends_on,
+            )
+            for s in semesters
+        ]
+
+    # -----------------------------------------------------------------
+    # Membership Types (D-024)
+    # -----------------------------------------------------------------
+    async def create_membership_type(self, data: MembershipTypeCreate) -> MembershipTypeResponse:
+        dues = to_decimal(data.dues_amount)
+        mtype = await self.repo.create_membership_type(data.name, dues, data.is_offered)
+        await self.session.commit()
+        return MembershipTypeResponse(
+            membership_type_id=mtype.membership_type_id,
+            name=mtype.name,
+            dues_amount=format_money(mtype.dues_amount),
+            is_offered=mtype.is_offered,
+        )
+
+    async def list_membership_types(self, active_only: bool = False) -> list[MembershipTypeResponse]:
+        types = await self.repo.get_membership_types(active_only=active_only)
+        return [
+            MembershipTypeResponse(
+                membership_type_id=t.membership_type_id,
+                name=t.name,
+                dues_amount=format_money(t.dues_amount),
+                is_offered=t.is_offered,
+            )
+            for t in types
+        ]
+
+    async def update_membership_type(
+        self,
+        membership_type_id: int,
+        name: Optional[str] = None,
+        dues_amount: Optional[str] = None,
+        is_offered: Optional[bool] = None,
+    ) -> MembershipTypeResponse:
+        dues_dec: Optional[Decimal] = to_decimal(dues_amount) if dues_amount else None
+        mtype = await self.repo.update_membership_type(membership_type_id, name, dues_dec, is_offered)
+        await self.session.commit()
+        return MembershipTypeResponse(
+            membership_type_id=mtype.membership_type_id,
+            name=mtype.name,
+            dues_amount=format_money(mtype.dues_amount),
+            is_offered=mtype.is_offered,
+        )
+
+    # -----------------------------------------------------------------
     # Memberships
+    # -----------------------------------------------------------------
     async def create_membership(self, data: MembershipCreate) -> MembershipResponse:
         member = await self.repo.get_by_id(data.member_id)
         if not member:
             raise NotFoundError("Member not found.")
 
-        valid_from = data.valid_from or datetime.date.today()
-        # Default expiry to Dec 31 of valid_from year per PRD
-        valid_until = data.valid_until or datetime.date(valid_from.year, 12, 31)
-
-        if valid_until <= valid_from:
-            raise ValidationError("valid_until must be strictly after valid_from.")
-
-        dues_amount = to_decimal(data.dues_amount)
-        membership = await self.repo.create_membership(data.member_id, valid_from, valid_until, dues_amount)
+        membership = await self.repo.create_membership(
+            member_id=data.member_id,
+            semester_id=data.semester_id,
+            membership_type_id=data.membership_type_id,
+        )
         await self.session.commit()
+
+        semester = await self.repo.get_semester_by_id(data.semester_id)
+        mtype = await self.repo.get_membership_type_by_id(data.membership_type_id)
 
         return MembershipResponse(
             membership_id=membership.membership_id,
             member_id=membership.member_id,
-            valid_from=membership.valid_from,
-            valid_until=membership.valid_until,
+            semester_id=membership.semester_id,
+            membership_type_id=membership.membership_type_id,
             dues_amount=format_money(membership.dues_amount),
             payment_id=membership.payment_id,
             renewal_reminder_sent_at=membership.renewal_reminder_sent_at,
+            semester_name=semester.name if semester else None,
+            membership_type_name=mtype.name if mtype else None,
+            valid_until=semester.ends_on if semester else None,
         )
 
     async def get_memberships(self, member_id: int) -> list[MembershipResponse]:
-        memberships = await self.repo.get_memberships_for_member(member_id)
+        rows = await self.repo.get_memberships_for_member(member_id)
         return [
             MembershipResponse(
-                membership_id=m.membership_id,
-                member_id=m.member_id,
-                valid_from=m.valid_from,
-                valid_until=m.valid_until,
-                dues_amount=format_money(m.dues_amount),
-                payment_id=m.payment_id,
-                renewal_reminder_sent_at=m.renewal_reminder_sent_at,
+                membership_id=ms.membership_id,
+                member_id=ms.member_id,
+                semester_id=ms.semester_id,
+                membership_type_id=ms.membership_type_id,
+                dues_amount=format_money(ms.dues_amount),
+                payment_id=ms.payment_id,
+                renewal_reminder_sent_at=ms.renewal_reminder_sent_at,
+                semester_name=sem.name,
+                membership_type_name=mtype.name,
+                valid_until=sem.ends_on,
             )
-            for m in memberships
+            for ms, sem, mtype in rows
         ]
 
+    # -----------------------------------------------------------------
     # Leadership
-    async def list_leadership(self, term_year: int | None = None) -> list[LeadershipRoleResponse]:
+    # -----------------------------------------------------------------
+    async def list_leadership(self, term_year: Optional[int] = None) -> list[LeadershipRoleResponse]:
         roles = await self.repo.get_leadership_roles(term_year)
         return [
             LeadershipRoleResponse(

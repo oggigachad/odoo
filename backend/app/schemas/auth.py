@@ -1,8 +1,11 @@
+from typing import Optional
+
 from pydantic import BaseModel, EmailStr
 
 
 class MagicLinkRequest(BaseModel):
     email: EmailStr
+    portal: Optional[str] = "member"
 
 
 class TokenExchangeRequest(BaseModel):
@@ -19,6 +22,6 @@ class MemberInfo(BaseModel):
     member_id: int
     full_name: str
     email: str
-    phone: str | None = None
+    phone: Optional[str] = None
     is_active: bool = False
     roles: list[str] = []

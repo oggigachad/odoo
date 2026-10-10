@@ -69,12 +69,22 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
     env:
       APP_ENV: test
       DATABASE_URL: postgresql+asyncpg://sos:sos@localhost:5432/sos_test
+      REDIS_URL: redis://localhost:6379/0
       JWT_SECRET: ci-only-secret-not-for-production
       PAYMENT_WEBHOOK_SECRET: ci-only-webhook-secret
     steps:
@@ -104,6 +114,7 @@ jobs:
       run:
         working-directory: web
     env:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
     steps:
       - uses: actions/checkout@v4

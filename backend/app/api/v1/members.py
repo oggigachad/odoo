@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,8 +15,12 @@ from app.schemas.members import (
     MemberResponse,
     MembershipCreate,
     MembershipResponse,
+    MembershipTypeCreate,
+    MembershipTypeResponse,
     MemberUpdate,
     PaginatedMembers,
+    SemesterCreate,
+    SemesterResponse,
 )
 from app.services.member_service import MemberService
 
@@ -41,8 +45,8 @@ async def create_member(
 
 @router.get("/members", response_model=PaginatedMembers)
 async def list_members(
-    q: Annotated[str | None, Query(description="Search by name or email")] = None,
-    active: Annotated[bool | None, Query(description="Filter by active dues")] = None,
+    q: Annotated[Optional[str], Query(description="Search by name or email")] = None,
+    active: Annotated[Optional[bool], Query(description="Filter by active dues")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     _: Annotated[MemberInfo, Depends(RequireOfficer)] = None,  # type: ignore[assignment]
@@ -91,14 +95,82 @@ async def update_member(
     return await service.update_member(member_id, payload)
 
 
-# Memberships
+# ---------------------------------------------------------------------
+# Semesters (D-024, M-09)
+# ---------------------------------------------------------------------
+@router.get("/semesters", response_model=list[SemesterResponse])
+async def list_semesters(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[SemesterResponse]:
+    """List all semesters."""
+    service = MemberService(db)
+    return await service.list_semesters()
+
+
+@router.post("/semesters", response_model=SemesterResponse, status_code=status.HTTP_201_CREATED)
+async def create_semester(
+    payload: SemesterCreate,
+    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SemesterResponse:
+    """Officer creates a new semester."""
+    service = MemberService(db)
+    return await service.create_semester(payload)
+
+
+# ---------------------------------------------------------------------
+# Membership Types (D-024, M-09)
+# ---------------------------------------------------------------------
+@router.get("/membership-types", response_model=list[MembershipTypeResponse])
+async def list_membership_types(
+    all_types: Annotated[bool, Query(description="Include unoffered types")] = False,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,  # type: ignore[assignment]
+) -> list[MembershipTypeResponse]:
+    """List membership types."""
+    service = MemberService(db)
+    return await service.list_membership_types(active_only=not all_types)
+
+
+@router.post("/membership-types", response_model=MembershipTypeResponse, status_code=status.HTTP_201_CREATED)
+async def create_membership_type(
+    payload: MembershipTypeCreate,
+    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MembershipTypeResponse:
+    """Officer creates a new membership type."""
+    service = MemberService(db)
+    return await service.create_membership_type(payload)
+
+
+@router.patch("/membership-types/{type_id}", response_model=MembershipTypeResponse)
+async def update_membership_type(
+    type_id: int,
+    payload: MembershipTypeCreate,
+    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MembershipTypeResponse:
+    """Officer updates a membership type."""
+    service = MemberService(db)
+    return await service.update_membership_type(
+        type_id,
+        name=payload.name,
+        dues_amount=payload.dues_amount,
+        is_offered=payload.is_offered,
+    )
+
+
+# ---------------------------------------------------------------------
+# Memberships (D-024)
+# ---------------------------------------------------------------------
 @router.post("/memberships", response_model=MembershipResponse, status_code=status.HTTP_201_CREATED)
 async def create_membership(
     payload: MembershipCreate,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    current_user: Annotated[MemberInfo, Depends(get_current_member)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MembershipResponse:
-    """Officer creates an unpaid membership."""
+    """Member selects semester and type to buy (or officer creates for them)."""
+    if current_user.member_id != payload.member_id and not check_is_officer(current_user):
+        raise ForbiddenError("You can only purchase membership for yourself.")
     service = MemberService(db)
     return await service.create_membership(payload)
 
@@ -116,14 +188,15 @@ async def list_member_memberships(
     return await service.get_memberships(member_id)
 
 
+# ---------------------------------------------------------------------
 # Leadership
+# ---------------------------------------------------------------------
 @router.get("/leadership", response_model=list[LeadershipRoleResponse])
 async def list_leadership_roles(
-    term_year: Annotated[int | None, Query(description="Filter by term year")] = None,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)] = None,  # type: ignore[assignment]
+    term_year: Annotated[Optional[int], Query(description="Filter by term year")] = None,
     db: Annotated[AsyncSession, Depends(get_db)] = None,  # type: ignore[assignment]
 ) -> list[LeadershipRoleResponse]:
-    """Officer list leadership roles."""
+    """List leadership roles for the year."""
     service = MemberService(db)
     return await service.list_leadership(term_year)
 

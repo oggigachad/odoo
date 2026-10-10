@@ -58,6 +58,8 @@ def downgrade() -> None:
         DROP TABLE IF EXISTS fundraiser_tasks CASCADE;
         DROP TABLE IF EXISTS order_items CASCADE;
         DROP TABLE IF EXISTS orders CASCADE;
+        DROP TRIGGER IF EXISTS order_items_non_member_limit ON order_items CASCADE;
+        DROP FUNCTION IF EXISTS enforce_non_member_goodie_limit CASCADE;
         DROP TABLE IF EXISTS product_variants CASCADE;
         DROP TABLE IF EXISTS products CASCADE;
         DROP TABLE IF EXISTS announcements CASCADE;
@@ -67,6 +69,8 @@ def downgrade() -> None:
         DROP TABLE IF EXISTS ticket_types CASCADE;
         DROP TABLE IF EXISTS events CASCADE;
         DROP TABLE IF EXISTS memberships CASCADE;
+        DROP TABLE IF EXISTS membership_types CASCADE;
+        DROP TABLE IF EXISTS semesters CASCADE;
         DROP TABLE IF EXISTS payments CASCADE;
         DROP TABLE IF EXISTS fundraisers CASCADE;
         DROP TABLE IF EXISTS leadership_roles CASCADE;
