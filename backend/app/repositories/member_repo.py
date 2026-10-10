@@ -190,7 +190,7 @@ class MemberRepository:
         if term_year:
             stmt = stmt.where(LeadershipRole.term_year == term_year)
         result = await self.session.execute(stmt)
-        return result.all()  # type: ignore[return-value]
+        return result.all()
 
     async def add_leadership_role(self, member_id: int, position: str, term_year: int) -> LeadershipRole:
         role = LeadershipRole(member_id=member_id, position=position.strip(), term_year=term_year)

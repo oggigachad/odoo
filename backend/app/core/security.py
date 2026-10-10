@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 
 from jose import JWTError, jwt
 
@@ -30,7 +30,7 @@ def decode_magic_link_token(token: str) -> str:
         sub = payload.get("sub")
         if not sub or not isinstance(sub, str):
             raise UnauthenticatedError("Token missing subject email.")
-        return sub
+        return cast(str, sub)
     except JWTError as err:
         raise UnauthenticatedError("Invalid or expired magic link.") from err
 

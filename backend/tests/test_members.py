@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -8,7 +10,8 @@ from app.main import app
 async def test_create_member_self_signup() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Create a new member
-        email = "rajesh.sharma@example.edu"
+        uid = uuid.uuid4().hex[:8]
+        email = f"student_{uid}@example.edu"
         res = await client.post(
             "/api/v1/members",
             json={"full_name": "Rajesh Sharma", "email": email, "phone": "+919876543210"},
