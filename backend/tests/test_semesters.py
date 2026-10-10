@@ -40,8 +40,14 @@ async def test_semester_and_membership_types_flow() -> None:
         token = create_session_token(officer_id)
         auth_headers = {"Authorization": f"Bearer {token}"}
 
-        # 2. Officer creates semester
-        year = 2050 + (int(uid, 16) % 500)
+        # 2. Officer creates semester (in a year no earlier run has used: the test database keeps old semesters)
+        from sqlalchemy import text as _text
+
+        async with async_session_factory() as db:
+            used = {r[0] for r in (await db.execute(_text(
+                "SELECT DISTINCT y FROM (SELECT generate_series(extract(year FROM starts_on)::int, extract(year FROM ends_on)::int + 1) AS y FROM semesters) s"
+            ))).all()}
+        year = next(y for y in range(2050 + (int(uid, 16) % 500), 9000) if y not in used and y + 1 not in used)
         sem_res = await client.post(
             "/api/v1/semesters",
             headers=auth_headers,

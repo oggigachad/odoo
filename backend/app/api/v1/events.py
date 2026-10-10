@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireAnnouncer, RequireOfficer, get_current_member, get_optional_member, is_officer
+from app.api.deps import RequireAnnouncer, RequireOfficer, RequireOperator, get_current_member, get_optional_member, is_officer
 from app.core.database import get_db
 from app.schemas.auth import MemberInfo
 from app.core.errors import ForbiddenError, NotFoundError
@@ -44,7 +44,7 @@ async def list_events(
 @router.post("/events", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
 async def create_event(
     payload: EventCreate,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    _: Annotated[MemberInfo, Depends(RequireOperator)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EventResponse:
     """Officer creates an event with ticket types."""
@@ -66,7 +66,7 @@ async def get_event(
 async def add_ticket_type(
     event_id: int,
     payload: TicketTypeCreate,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    _: Annotated[MemberInfo, Depends(RequireOperator)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TicketTypeResponse:
     """Officer adds a ticket type with total and non-member seat limits."""
@@ -78,20 +78,24 @@ async def add_ticket_type(
 async def purchase_tickets(
     payload: TicketPurchaseRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    buyer: Annotated[MemberInfo | None, Depends(get_optional_member)] = None,
 ) -> TicketPurchaseResponse:
     """
     Buy or hold tickets for members and non-members.
     Zero-oversell guaranteed by DB locks and triggers.
     Holds seat for 15 minutes while paying.
+
+    Member prices are only given to the signed-in buyer's own ticket (blank holder e-mail = the buyer). Typing someone
+    else's e-mail never unlocks a member price, and an e-mail is needed per holder where a per-person cap applies.
     """
     service = EventService(db)
-    return await service.purchase_tickets(payload)
+    return await service.purchase_tickets(payload, buyer)
 
 
 @router.post("/checkin", response_model=CheckInResponse)
 async def check_in(
     payload: CheckInRequest,
-    current_officer: Annotated[MemberInfo, Depends(RequireOfficer)],
+    current_officer: Annotated[MemberInfo, Depends(RequireOperator)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CheckInResponse:
     """
@@ -126,7 +130,7 @@ async def get_my_tickets(
 @router.get("/events/{event_id}/manifest", response_model=EventManifestResponse)
 async def get_event_manifest(
     event_id: int,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    _: Annotated[MemberInfo, Depends(RequireOperator)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EventManifestResponse:
     """Signed attendee manifest so door staff can keep checking people in while offline."""
@@ -136,7 +140,7 @@ async def get_event_manifest(
 @router.post("/checkin/batch", response_model=CheckInBatchResponse)
 async def check_in_batch(
     payload: CheckInBatchRequest,
-    current_officer: Annotated[MemberInfo, Depends(RequireOfficer)],
+    current_officer: Annotated[MemberInfo, Depends(RequireOperator)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CheckInBatchResponse:
     """Replay scans that were captured offline; each is validated independently."""

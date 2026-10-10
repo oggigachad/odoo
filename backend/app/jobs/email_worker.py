@@ -3,7 +3,7 @@ import html
 import logging
 import smtplib
 from email.message import EmailMessage
-from email.utils import formataddr
+from email.utils import formataddr, parseaddr
 from pathlib import Path
 from typing import Any
 
@@ -30,30 +30,99 @@ def _accounts() -> list[tuple[str, str]]:
     return out
 
 
+def _smtp_ports() -> list[int]:
+    """Configured port first, then its sibling: some networks drop 465 or 587 at random."""
+    first = settings.SMTP_PORT
+    second = settings.SMTP_FALLBACK_PORT or (587 if first == 465 else 465)
+    return [first] if second == first else [first, second]
+
+
 def _send_smtp(messages: list[EmailMessage]) -> None:
-    """Blocking delivery (run in a thread). Tries each configured mailbox until one works."""
+    """Blocking delivery (run in a thread). Tries every mailbox on both ports, twice over, before giving up."""
     last: Exception | None = None
-    for user, password in _accounts():
-        try:
-            implicit_tls = settings.SMTP_PORT == 465  # some networks block 587 but allow 465
-            client = smtplib.SMTP_SSL if implicit_tls else smtplib.SMTP
-            with client(settings.SMTP_HOST, settings.SMTP_PORT, timeout=20) as smtp:
-                if settings.SMTP_HOST not in ("localhost", "127.0.0.1"):  # a local test sink has no TLS or login
-                    if not implicit_tls:
-                        smtp.starttls()
-                    smtp.login(user, password)
-                for msg in messages:
-                    if "From" not in msg:
-                        msg["From"] = formataddr(("Skyline Student Association", user))
-                    smtp.send_message(msg)
-            return
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("SMTP login/send failed for %s: %s", user, exc)
-            last = exc
-            for msg in messages:
-                if "From" in msg:
-                    del msg["From"]
+    local = settings.SMTP_HOST in ("localhost", "127.0.0.1")  # a local test sink has no TLS or login
+    for _round in range(2):
+        for user, password in _accounts():
+            for port in _smtp_ports():
+                try:
+                    implicit_tls = port == 465
+                    client = smtplib.SMTP_SSL if implicit_tls and not local else smtplib.SMTP
+                    with client(settings.SMTP_HOST, port, timeout=12) as smtp:
+                        if not local:
+                            if not implicit_tls:
+                                smtp.starttls()
+                            smtp.login(user, password)
+                        for msg in messages:
+                            if "From" not in msg:
+                                msg["From"] = formataddr(("Skyline Student Association", user))
+                            smtp.send_message(msg)
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("SMTP %s:%s as %s failed: %s", settings.SMTP_HOST, port, user, exc)
+                    last = exc
+                    for msg in messages:
+                        if "From" in msg:
+                            del msg["From"]
     raise last or RuntimeError("No SMTP account configured")
+
+
+def _api_payload(msg: EmailMessage) -> dict[str, str]:
+    """Pull what an HTTPS e-mail service needs out of the finished message (the logo cid becomes a hosted link)."""
+    html_part = msg.get_body(preferencelist=("html",))
+    text_part = msg.get_body(preferencelist=("plain",))
+    logo_url = f"{settings.FRONTEND_URL.rstrip('/')}/logo.png"
+    return {
+        "to": str(msg["To"]),
+        "subject": str(msg["Subject"]),
+        "html": html_part.get_content().replace("cid:skylinelogo", logo_url) if html_part else "",
+        "text": text_part.get_content() if text_part else "",
+    }
+
+
+def _send_api(messages: list[EmailMessage]) -> None:
+    """Send through Brevo or Resend over HTTPS. Raises if the service refuses."""
+    import httpx
+
+    sender_email = parseaddr(settings.EMAIL_FROM)[1] or settings.EMAIL_FROM
+    with httpx.Client(timeout=30, follow_redirects=True) as http:
+        for msg in messages:
+            p = _api_payload(msg)
+            if settings.MAIL_RELAY_URL and settings.MAIL_RELAY_TOKEN and not (settings.BREVO_API_KEY or settings.RESEND_API_KEY):
+                res = http.post(settings.MAIL_RELAY_URL, json={"token": settings.MAIL_RELAY_TOKEN, "to": p["to"], "subject": p["subject"], "html": p["html"], "text": p["text"]})
+                if res.status_code >= 300 or res.text.strip() != "ok":
+                    raise RuntimeError(f"mail relay answered {res.status_code}: {res.text[:120]}")
+                continue
+            if settings.BREVO_API_KEY:
+                res = http.post(
+                    "https://api.brevo.com/v3/smtp/email",
+                    headers={"api-key": settings.BREVO_API_KEY, "accept": "application/json"},
+                    json={"sender": {"name": "Skyline Student Association", "email": sender_email}, "to": [{"email": p["to"]}],
+                          "subject": p["subject"], "htmlContent": p["html"], "textContent": p["text"]},
+                )
+            else:
+                res = http.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+                    json={"from": f"Skyline Student Association <{sender_email}>", "to": [p["to"]], "subject": p["subject"],
+                          "html": p["html"], "text": p["text"]},
+                )
+            if res.status_code >= 300:
+                raise RuntimeError(f"e-mail service answered {res.status_code}: {res.text[:200]}")
+
+
+def _deliver(messages: list[EmailMessage]) -> str:
+    """HTTPS service first when configured, then SMTP. Returns which way worked."""
+    if settings.BREVO_API_KEY or settings.RESEND_API_KEY or (settings.MAIL_RELAY_URL and settings.MAIL_RELAY_TOKEN):
+        has_smtp = bool(_accounts() and settings.SMTP_HOST)
+        try:
+            _send_api(messages)
+            return "https"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("HTTPS e-mail service failed (%s)%s", exc, ", trying SMTP" if has_smtp else "")
+            if not has_smtp:
+                raise
+    _send_smtp(messages)
+    return "smtp"
 
 
 def _html(heading: str, body: str, code: str | None = None, cta: tuple[str, str] | None = None) -> str:
@@ -122,24 +191,33 @@ def build_job_messages(job: dict[str, Any], recipients: list[str] | None = None)
 
 async def process_email(job: dict[str, Any]) -> bool:
     """Deliver a queued email. Without SMTP credentials the job is skipped with a warning (never retried)."""
-    if not _accounts() or not settings.SMTP_HOST:
-        logger.warning("SMTP not configured (SMTP_HOST/SMTP_USER/SMTP_PASSWORD): skipping '%s' email", job.get("type"))
+    if not settings.smtp_configured:
+        logger.warning("E-mail not configured (set BREVO_API_KEY, RESEND_API_KEY or SMTP_*): skipping '%s' email", job.get("type"))
         return True
     recipients = await _recipients_for_broadcast() if job.get("type") == "announcement_broadcast" else None
     messages = build_job_messages(job, recipients)
     if not messages:
         return True
     try:
-        await asyncio.to_thread(_send_smtp, messages)
-        logger.info("Email '%s' delivered (%d message(s))", job.get("type"), len(messages))
+        how = await asyncio.to_thread(_deliver, messages)
+        logger.info("Email '%s' delivered by %s (%d message(s))", job.get("type"), how, len(messages))
         return True
     except Exception as exc:  # noqa: BLE001
         logger.error("SMTP delivery failed for '%s': %s", job.get("type"), exc)
         return False
 
 
+MAX_ATTEMPTS = 5
+
+
+async def _requeue_later(job: dict[str, Any], delay: float) -> None:
+    """Put a failed job back after a pause without holding up the other e-mails."""
+    await asyncio.sleep(delay)
+    await enqueue_email(job)
+
+
 async def run_email_worker(max_iterations: int | None = None) -> None:
-    """Continuously processes jobs from queue:emails."""
+    """Continuously processes jobs from queue:emails; a failed job is retried (up to 5 times, growing pauses)."""
     iteration = 0
     while max_iterations is None or iteration < max_iterations:
         job = await dequeue_email(timeout=1)
@@ -148,10 +226,10 @@ async def run_email_worker(max_iterations: int | None = None) -> None:
             job["attempts"] = attempts
             success = await process_email(job)
             if not success:
-                if attempts < 3:
-                    logger.warning(f"Retrying email job {job.get('type')}, attempt {attempts}")
-                    await asyncio.sleep(2**attempts)
-                    await enqueue_email(job)
+                if attempts < MAX_ATTEMPTS:
+                    delay = min(5 * attempts, 20)
+                    logger.warning("Retrying email job %s in %ss (attempt %s of %s)", job.get("type"), delay, attempts, MAX_ATTEMPTS)
+                    asyncio.create_task(_requeue_later(job, delay))
                 else:
-                    logger.error(f"Failed to send email after 3 attempts: {job}")
+                    logger.error("Giving up on email job %s after %s attempts", job.get("type"), MAX_ATTEMPTS)
         iteration += 1

@@ -55,6 +55,8 @@ RequireOfficer = require_role(list(OFFICER_POSITIONS))
 RequireAdmin = require_role(["Admin"])
 RequireAnnouncer = require_role(list(ANNOUNCER_POSITIONS))
 RequireTreasurer = require_role(list(FINANCE_POSITIONS))
+# Running the club's events, shop and fundraisers: Admin and officers, NOT the finance-only roles (Treasurer, Accountant)
+RequireOperator = require_role(list(ANNOUNCER_POSITIONS))
 
 
 def is_officer(user: MemberInfo) -> bool:

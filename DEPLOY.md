@@ -25,7 +25,8 @@ copy .env.production.example .env.production   # fill in; FRONTEND_URL and CORS_
 ```
 Then build the site with that address and upload `frontend/dist` to Netlify (drag and drop) or set `VITE_API_URL` in Netlify and redeploy: `cd frontend; $env:VITE_API_URL='https://<random>.trycloudflare.com'; npm run build`. For a fixed address use a named Cloudflare tunnel on your own domain, or a real server (below).
 
-**Keep it running after restarts (Option B):** `powershell -ExecutionPolicy Bypass -File deploy\install-autostart.ps1` registers a Windows logon task (`SkylineBackend`) that starts Docker Desktop if it is closed, brings the stack up, opens the tunnel, and restarts the tunnel if it drops. It writes the current public address to `deploy/current-api-url.txt` and a log to `deploy/autostart.log`. Remove it with `-Remove`. After every reboot or tunnel restart the address changes: run `deployebuild-site.ps1` to rebuild the site against it and upload `frontend\dist` again. Also stop Windows from sleeping while plugged in (Settings > System > Power), or the site goes offline. For an address that never changes, use a real server (below) or a named tunnel on your own domain.
+**Keep it running after restarts (Option B):** `powershell -ExecutionPolicy Bypass -File deploy\install-autostart.ps1` registers a Windows logon task (`SkylineBackend`) that starts Docker Desktop if it is closed, brings the stack up, opens the tunnel, and restarts the tunnel if it drops. It writes the current public address to `deploy/current-api-url.txt` and a log to `deploy/autostart.log`. Remove it with `-Remove`. After every reboot or tunnel restart the address changes: run `deploy
+ebuild-site.ps1` to rebuild the site against it and upload `frontend\dist` again. Also stop Windows from sleeping while plugged in (Settings > System > Power), or the site goes offline. For an address that never changes, use a real server (below) or a named tunnel on your own domain.
 
 ## 1. Backend on the server
 ```bash
@@ -92,3 +93,27 @@ It makes `treasurer@company.com` (Treasurer), `officer@company.com` (Officer), `
 Everything the site saves is written to PostgreSQL and MinIO, which live in Docker **volumes** (`skyline_postgres_data`, `skyline_minio_data`, `skyline_redis_data`). Restarting Windows, Docker or the containers, `docker compose down` and `up`, and reloading the website never delete it (this was tested). Only `docker compose down -v`, deleting the volumes in Docker Desktop, or losing the disk does.
 - **Backup (Windows):** `powershell -ExecutionPolicy Bypass -File deploy\backup.ps1 -Install` backs up now and schedules a daily 03:00 run to `%USERPROFILE%\Backups\skyline` (database `db_*.sql.gz`, pictures `media_*.zip`, kept 14 days). Copy that folder to another disk or cloud drive regularly.
 - **Restore the database:** `gunzip -c db_<time>.sql.gz | docker exec -i skyline-postgres-1 sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'` into an empty database. **Pictures:** stop MinIO and copy the unzipped folder back to `/data` (`docker cp <folder>/. skyline-minio-1:/data`), then start it.
+
+
+## E-mail delivery (sign-up and sign-in codes, reminders, announcements)
+**The problem:** from a home or campus network Gmail's SMTP ports (465 and 587) are filtered at random. Measured here: connections timed out about half the time and took 16 to 80 seconds when they worked, while ordinary HTTPS (port 443) answered instantly. Codes arrived late or not at all.
+
+**What the server does now (in this order):**
+1. **An HTTPS e-mail service**, if one is configured: `BREVO_API_KEY` (free plan; verify the `EMAIL_FROM` address as a sender), or `RESEND_API_KEY`, or the Gmail relay below. This is the reliable option.
+2. **SMTP** as backup: every mailbox on both ports 465 and 587, two rounds, 12 s per try.
+3. A failed message is retried up to 5 times with growing pauses, without holding up other e-mails.
+
+**Gmail relay over HTTPS (no new account needed):** in Google Apps Script (script.google.com, signed in as the sending Gmail) create a project, paste the code below with your own long random secret, then Deploy > New deployment > Web app, "Execute as: me", "Who has access: Anyone". Put the web-app URL in `MAIL_RELAY_URL` and the secret in `MAIL_RELAY_TOKEN`, then `docker compose ... up -d`.
+```js
+function doPost(e) {
+  var d = JSON.parse(e.postData.contents);
+  if (d.token !== 'PUT-A-LONG-RANDOM-SECRET-HERE') return ContentService.createTextOutput('forbidden');
+  GmailApp.sendEmail(d.to, d.subject, d.text, { htmlBody: d.html, name: 'Skyline Student Association' });
+  return ContentService.createTextOutput('ok');
+}
+```
+Gmail limits a normal account to about 100 recipients a day.
+
+## Testing every use case
+`deploy/usecase_test.py` exercises the deployed build end to end: public pages and security headers, sign-up with a code, sign-in (password and code), all five roles and what each may do, events and tickets (free and paid, per-person limits, wrong and forged payments, signed QR PDF, the door, offline batch, registration link), membership (request, retry, payment, member status), the shop (checkout, limits, stock, payment, cancel, delete), announcements and notifications, fundraisers and tasks, expenses and the treasury, all eight reports and their exports, live updates over the WebSocket, and deleting events. It uses real Razorpay test orders.
+It runs against a second copy of the production container with e-mail switched off and its own Redis database, so no mail can leave; it tags everything `E2E` and `deploy/e2e-cleanup.sql` removes it afterwards. Last result: **136 of 136 passed**. How to run it is in the comments at the top of the script; the second container is started like the live one with `SMTP_*`, `BREVO_API_KEY`, `RESEND_API_KEY` and `MAIL_RELAY_*` emptied, `REDIS_URL` ending in `/1` and port 8002 published on 127.0.0.1.

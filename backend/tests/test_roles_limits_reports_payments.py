@@ -288,3 +288,39 @@ async def test_staff_and_buyers_can_check_out() -> None:
         assert [v["variant_id"] for p in listed if p["product_id"] == prod["product_id"] for v in p["variants"]] == [var["variant_id"]]
         left = [v["stock_quantity"] for p in listed if p["product_id"] == prod["product_id"] for v in p["variants"]][0]
         assert left == 2
+
+
+@pytest.mark.asyncio
+async def test_member_price_only_for_the_signed_in_buyer_and_roles_are_tight() -> None:
+    _, officer, _ = await _member("Officer")
+    _, treasurer, _ = await _member("Treasurer")
+    mid, member, member_email = await _member()
+    start = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=4)).isoformat()
+    body = {"title": "Price Night", "starts_at": start, "ticket_types": [{
+        "name": "G", "member_price": "100", "non_member_price": "300", "seat_limit": 20, "non_member_seat_limit": 20, "max_per_guest": 1, "max_per_member": 1}]}
+    async with client() as c:
+        # finance roles run the money, not the events, shop or door
+        assert (await c.post("/api/v1/events", headers=treasurer, json=body)).status_code == 403
+        assert (await c.post("/api/v1/products", headers=treasurer, json={"name": "x", "price": "1", "member_price": "1"})).status_code == 403
+        ev = (await c.post("/api/v1/events", headers=officer, json=body)).json()
+        tt = ev["ticket_types"][0]["ticket_type_id"]
+        assert (await c.post("/api/v1/checkin", headers=treasurer, json={"ticket_code": "x", "event_id": ev["event_id"]})).status_code == 403
+        # make the buyer an active member
+        async with async_session_factory() as db:
+            sem = (await db.execute(text("SELECT semester_id FROM semesters WHERE CURRENT_DATE BETWEEN starts_on AND ends_on LIMIT 1"))).scalar()
+            if sem is None:
+                sem = (await db.execute(text("INSERT INTO semesters (name, starts_on, ends_on) VALUES (:n, CURRENT_DATE - 30, CURRENT_DATE + 60) RETURNING semester_id"), {"n": f"S {uuid.uuid4().hex[:6]}"})).scalar()
+            mt = (await db.execute(text("SELECT membership_type_id FROM membership_types LIMIT 1"))).scalar()
+            if mt is None:
+                mt = (await db.execute(text("INSERT INTO membership_types (name, dues_amount) VALUES (:n, 500) RETURNING membership_type_id"), {"n": f"T {uuid.uuid4().hex[:6]}"})).scalar()
+            pid = (await db.execute(text("INSERT INTO payments (member_id, category, amount, method) VALUES (:m,'dues',500,'cash') RETURNING payment_id"), {"m": mid})).scalar()
+            await db.execute(text("INSERT INTO memberships (member_id, semester_id, membership_type_id, dues_amount, payment_id) VALUES (:m,:s,:t,500,:p)"), {"m": mid, "s": sem, "t": mt, "p": pid})
+            await db.commit()
+        # a stranger typing the member's e-mail still pays the non-member price
+        spoof = await c.post("/api/v1/tickets/purchase", json={"ticket_type_id": tt, "holders": [{"holder_name": "X", "holder_email": member_email}]})
+        assert spoof.status_code == 201 and spoof.json()["tickets"][0]["price_paid"] == "300.00"
+        # the signed-in member, with a blank holder e-mail, gets the member price, and the cap counts them
+        mine = await c.post("/api/v1/tickets/purchase", headers=member, json={"ticket_type_id": tt, "holders": [{"holder_name": "Me"}]})
+        assert mine.status_code in (201, 409, 422)
+        # a per-person cap needs an e-mail on every ticket
+        assert (await c.post("/api/v1/tickets/purchase", json={"ticket_type_id": tt, "holders": [{"holder_name": "No email"}]})).status_code == 422

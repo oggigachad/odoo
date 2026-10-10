@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireOfficer, get_current_member, is_officer
+from app.api.deps import RequireOfficer, RequireOperator, get_current_member, is_officer
 from app.core.database import get_db
 from app.schemas.auth import MemberInfo
 from app.schemas.fundraisers import (
@@ -33,7 +33,7 @@ async def list_fundraisers(
 @router.post("/fundraisers", response_model=FundraiserResponse, status_code=status.HTTP_201_CREATED)
 async def create_fundraiser(
     payload: FundraiserCreate,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    _: Annotated[MemberInfo, Depends(RequireOperator)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FundraiserResponse:
     """Officer creates a fundraiser event/campaign."""
@@ -65,7 +65,7 @@ async def get_fundraiser_progress(
 async def create_task(
     fundraiser_id: int,
     payload: TaskCreate,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    _: Annotated[MemberInfo, Depends(RequireOperator)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TaskResponse:
     """Officer creates a volunteer task."""

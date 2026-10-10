@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     # optional second mailbox, tried if the first one fails
     SMTP2_USER: str | None = None
     SMTP2_PASSWORD: str | None = None
+    # Port tried when SMTP_PORT is unreachable (465 <-> 587): some networks drop one of them at random
+    SMTP_FALLBACK_PORT: int | None = None
+    # Optional e-mail services reached over HTTPS (port 443 is not filtered the way SMTP is). Tried first when set.
+    BREVO_API_KEY: str | None = None
+    RESEND_API_KEY: str | None = None
+    # Or a tiny Google Apps Script web app that sends through your own Gmail over HTTPS (see DEPLOY.md)
+    MAIL_RELAY_URL: str | None = None
+    MAIL_RELAY_TOKEN: str | None = None
     GOOGLE_CLIENT_ID: str | None = None
     # MinIO object storage for product pictures and designs (required for product pictures)
     MINIO_ENDPOINT: str | None = None
@@ -73,6 +81,9 @@ class Settings(BaseSettings):
 
     @property
     def smtp_configured(self) -> bool:
+        """True when any way of sending e-mail is set up (an HTTPS e-mail service or SMTP)."""
+        if self.BREVO_API_KEY or self.RESEND_API_KEY or (self.MAIL_RELAY_URL and self.MAIL_RELAY_TOKEN):
+            return True
         return bool(self.SMTP_HOST and ((self.SMTP_USER and self.SMTP_PASSWORD) or (self.SMTP2_USER and self.SMTP2_PASSWORD)))
 
 

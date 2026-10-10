@@ -75,3 +75,13 @@ Still to do before going live (owner actions): rotate every secret that was past
 
 ### Redis incident note (11 Oct 2026)
 Finding: a native Windows `redis-server` 3.0.504 (an unmaintained 2016 build) was listening on `0.0.0.0:6379` with no password, so the API was using it instead of the Docker Redis and anyone on the network could read or write OTP codes, rate-limit counters, payment order bindings and the email queue. The Docker Redis (7.4, password) could not bind 6379 because of it. Fix: the API now uses the Docker Redis on `127.0.0.1:6380` with its password (`REDIS_URL` in `backend/.env`, tests updated). The native Redis was left running because it may belong to something else: stop it with `Stop-Service Redis` (or uninstall it) once you confirm nothing else needs it, and block inbound 6379 in Windows Firewall.
+
+
+### Use-case test findings (11 Oct 2026)
+| # | Finding | Fix |
+| :--- | :--- | :--- |
+| 1 | Sign-up codes arrived late or never from a home network (Gmail SMTP filtered at random) | HTTPS e-mail options (Brevo, Resend, Gmail relay), SMTP on both ports with retries, 5 retries per message |
+| 2 | Treasurer and Accountant could create events, products, fundraisers and use the door through the API (the screen hid them) | New `RequireOperator`: Admin and officers only for events, ticket types, check-in, manifest, products, sizes, fundraisers |
+| 3 | Typing a member's e-mail on a ticket gave the member price to anyone | Member price only for the signed-in buyer's own ticket (blank holder e-mail means the buyer) |
+| 4 | Per-person ticket limits could be skipped by leaving the e-mail blank | An e-mail is required on every ticket where a cap exists; blank means the buyer when signed in |
+Result of the full test after the fixes: 136 of 136 checks passed, plus 49 automated tests.

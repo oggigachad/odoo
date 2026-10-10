@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireAnnouncer, RequireOfficer, get_current_member, get_optional_member, is_officer
+from app.api.deps import RequireAnnouncer, RequireOfficer, RequireOperator, get_current_member, get_optional_member, is_officer
 from app.core.errors import ForbiddenError, NotFoundError, ValidationError
 from app.core.database import get_db
 from app.schemas.auth import MemberInfo
@@ -144,7 +144,7 @@ async def set_product_image(
 @router.post("/products", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
 async def create_product(
     payload: ProductCreate,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    _: Annotated[MemberInfo, Depends(RequireOperator)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ProductResponse:
     """Officer creates a goodie product."""
@@ -166,7 +166,7 @@ async def get_product(
 async def add_variant(
     product_id: int,
     payload: VariantCreate,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    _: Annotated[MemberInfo, Depends(RequireOperator)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> VariantResponse:
     """Officer adds or updates stock for a size variant."""

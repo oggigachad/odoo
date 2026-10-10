@@ -204,7 +204,7 @@ class EventService:
             non_member_seats_left=tt.non_member_seat_limit,
         )
 
-    async def purchase_tickets(self, data: TicketPurchaseRequest) -> TicketPurchaseResponse:
+    async def purchase_tickets(self, data: TicketPurchaseRequest, buyer=None) -> TicketPurchaseResponse:  # type: ignore[no-untyped-def]
         """
         Concurrency-safe ticket purchase.
         Prices each ticket based on active membership status of the holder email (D-022).
@@ -213,16 +213,19 @@ class EventService:
         today = datetime.date.today()
         member_map: dict[str, Optional[Member]] = {}
 
-        # 1. Look up membership status for each holder email
+        # 1. Who is a member? Only the signed-in buyer, and only for their own ticket. A blank holder e-mail means
+        #    the buyer; every other e-mail is priced as a non-member (otherwise anyone could type a member's address).
+        buyer_email = (buyer.email or "").strip().lower() if buyer else ""
+        buyer_member = None
+        if buyer and buyer.is_active:
+            buyer_member = await self.member_repo.get_by_id(buyer.member_id)
         for h in data.holders:
             email = (h.holder_email or "").strip().lower()
+            if not email and buyer_email:
+                email = buyer_email
+                h.holder_email = buyer_email
             if email and email not in member_map:
-                m = await self.member_repo.get_by_email(email)
-                if m:
-                    is_active = await self.member_repo.has_active_membership(m.member_id, today)
-                    member_map[email] = m if is_active else None
-                else:
-                    member_map[email] = None
+                member_map[email] = buyer_member if (email == buyer_email and buyer_member) else None
 
         # 1b. Per-person caps set by admin/officer (members and non-members can have different caps)
         await self._enforce_person_limits(data, member_map)
@@ -264,6 +267,8 @@ class EventService:
         wanted: dict[str, int] = {}
         for h in data.holders:
             key = (h.holder_email or "").strip().lower()
+            if not key:
+                raise ValidationError("Enter an e-mail for every ticket holder: this ticket has a per-person limit.")
             wanted[key] = wanted.get(key, 0) + 1
         for email, count in wanted.items():
             is_member = member_map.get(email) is not None
