@@ -1,7 +1,7 @@
 import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class MemberCreate(BaseModel):
@@ -25,6 +25,7 @@ class MemberResponse(BaseModel):
     valid_until: Optional[datetime.date] = None
     semester_name: Optional[str] = None
     membership_type: Optional[str] = None
+    student_id: Optional[str] = None
 
 
 class MemberLookupResponse(BaseModel):
@@ -93,6 +94,16 @@ class LeadershipRoleCreate(BaseModel):
     member_id: int
     position: str
     term_year: int
+
+    @field_validator("position")
+    @classmethod
+    def _known_position(cls, v: str) -> str:
+        from app.api.deps import ASSIGNABLE_POSITIONS
+
+        match = next((p for p in ASSIGNABLE_POSITIONS if p.lower() == v.strip().lower()), None)
+        if not match:
+            raise ValueError("Position must be one of: " + ", ".join(ASSIGNABLE_POSITIONS))
+        return match
 
 
 class LeadershipRoleResponse(BaseModel):

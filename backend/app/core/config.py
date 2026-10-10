@@ -18,6 +18,53 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
     SENTRY_DSN: str | None = None
     EMAIL_FROM: str = "noreply@skyline.edu"
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    # optional second mailbox, tried if the first one fails
+    SMTP2_USER: str | None = None
+    SMTP2_PASSWORD: str | None = None
+    GOOGLE_CLIENT_ID: str | None = None
+    # MinIO object storage for product pictures and designs (required for product pictures)
+    MINIO_ENDPOINT: str | None = None
+    MINIO_ACCESS_KEY: str | None = None
+    MINIO_SECRET_KEY: str | None = None
+    MINIO_BUCKET: str = "skyline-media"
+    MINIO_SECURE: bool = False
+    # Secret used to sign ticket QR payloads (required, separate from JWT_SECRET)
+    TICKET_SIGNING_SECRET: str | None = None
+    # Razorpay Payment Gateway Credentials (loaded strictly from environment)
+    RAZORPAY_KEY_ID: str | None = None
+    RAZORPAY_KEY_SECRET: str | None = None
+    RAZORPAY_WEBHOOK_SECRET: str | None = None
+    TESTMAIL_API_KEY: str | None = None  # dev-only inbox for OTP testing
+    TESTMAIL_NAMESPACE: str | None = None
+    CURRENCY: str = "INR"
+    CURRENCY_SYMBOL: str = "₹"
+    # Who may create an account. Comma separated; a domain also matches its sub-domains.
+    STUDENT_EMAIL_DOMAINS: str = "gmail.com,student.edu.in"
+    ADMIN_EMAIL_DOMAINS: str = "company.com,company.in"
+
+    @property
+    def razorpay_configured(self) -> bool:
+        return bool(self.RAZORPAY_KEY_ID and self.RAZORPAY_KEY_SECRET)
+
+    @staticmethod
+    def _domains(raw: str) -> list[str]:
+        return [d.strip().lower().lstrip("@") for d in raw.split(",") if d.strip()]
+
+    @property
+    def student_domains(self) -> list[str]:
+        return self._domains(self.STUDENT_EMAIL_DOMAINS)
+
+    @property
+    def admin_domains(self) -> list[str]:
+        return self._domains(self.ADMIN_EMAIL_DOMAINS)
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.SMTP_HOST and ((self.SMTP_USER and self.SMTP_PASSWORD) or (self.SMTP2_USER and self.SMTP2_PASSWORD)))
 
 
 settings = Settings()

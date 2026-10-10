@@ -1,38 +1,54 @@
+version: '3.8'
+
 services:
   postgres:
-    image: postgres:16
-    container_name: sos_postgres
+    image: postgres:16-alpine
+    container_name: skyline_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-sos}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sos}
-      POSTGRES_DB: ${POSTGRES_DB:-sos_dev}
+      POSTGRES_USER: skyline_admin
+      POSTGRES_PASSWORD: skyline_secure_password_2026
+      POSTGRES_DB: skyline_db
     ports:
-      - "5432:5432"
+      - '127.0.0.1:5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sos -d sos_dev"]
+      test: ['CMD-SHELL', 'pg_isready -U skyline_admin -d skyline_db']
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: sos_redis
+    container_name: skyline_redis
     restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--requirepass', 'skyline_redis_token_2026']
     ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+      - '127.0.0.1:6380:6379'
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', '-a', 'skyline_redis_token_2026', 'ping']
       interval: 5s
       timeout: 5s
       retries: 5
 
+  minio:
+    image: coollabsio/minio:latest
+    container_name: skyline_minio
+    restart: unless-stopped
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: skyline_minio
+      MINIO_ROOT_PASSWORD: skyline_minio_secret_2026
+    ports:
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
+    volumes:
+      - minio_data:/data
+
 volumes:
+  minio_data:
   postgres_data:
   redis_data:

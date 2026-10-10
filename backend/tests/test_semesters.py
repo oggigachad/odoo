@@ -99,7 +99,23 @@ async def test_semester_and_membership_types_flow() -> None:
         assert ms_data["dues_amount"] == "500.00"
         assert ms_data["semester_name"] == f"Fall {year} {uid}"
 
-        # 6. Purchasing duplicate membership for the same semester should fail with MEMBERSHIP_EXISTS (409)
+        # 6a. An unpaid attempt (cancelled payment) is reused on retry instead of being refused
+        retry = await client.post(
+            "/api/v1/memberships",
+            headers={"Authorization": f"Bearer {student_token}"},
+            json={"member_id": student_id, "semester_id": sem_data["semester_id"], "membership_type_id": basic_type["membership_type_id"]},
+        )
+        assert retry.status_code == 201 and retry.json()["membership_id"] == ms_data["membership_id"]
+
+        # 6b. Once paid, buying the same semester again fails with MEMBERSHIP_EXISTS (409)
+        from sqlalchemy import text as _t
+
+        from app.core.database import async_session_factory as _sf
+
+        async with _sf() as _db:
+            pid = (await _db.execute(_t("INSERT INTO payments (category, amount, method, member_id) VALUES ('dues', 500, 'cash', :m) RETURNING payment_id"), {"m": student_id})).scalar_one()
+            await _db.execute(_t("UPDATE memberships SET payment_id = :p WHERE membership_id = :i"), {"p": pid, "i": ms_data["membership_id"]})
+            await _db.commit()
         dup_ms_res = await client.post(
             "/api/v1/memberships",
             headers={"Authorization": f"Bearer {student_token}"},

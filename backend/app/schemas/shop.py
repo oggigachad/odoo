@@ -22,6 +22,9 @@ class ProductCreate(BaseModel):
     price: str = "500.00"  # non-member price
     member_price: str = "400.00"
     non_member_limit: int = Field(default=0, ge=0)
+    max_per_member: Optional[int] = Field(default=None, gt=0)
+    max_per_guest: Optional[int] = Field(default=None, gt=0)
+    image_url: Optional[str] = Field(default=None, max_length=300)
     variants: Optional[list[VariantCreate]] = None
 
 
@@ -34,6 +37,9 @@ class ProductResponse(BaseModel):
     non_member_limit: int
     non_member_units_taken: int = 0
     non_member_units_left: int = 0
+    max_per_member: Optional[int] = None
+    max_per_guest: Optional[int] = None
+    image_url: Optional[str] = None
     variants: list[VariantResponse] = []
 
 

@@ -131,6 +131,28 @@ class MemberRepository:
             return member, is_active, sem.ends_on, sem.name, mt.name
         return member, False, None, None, None
 
+    async def get_membership_info(
+        self, member_id: int
+    ) -> tuple[bool, Optional[datetime.date], Optional[str], Optional[str]]:
+        today = datetime.date.today()
+        stmt = (
+            select(Membership, Semester, MembershipType)
+            .join(Semester, Semester.semester_id == Membership.semester_id)
+            .join(MembershipType, MembershipType.membership_type_id == Membership.membership_type_id)
+            .where(
+                Membership.member_id == member_id,
+                Membership.payment_id.is_not(None),
+            )
+            .order_by(Semester.ends_on.desc())
+        )
+        res = await self.session.execute(stmt)
+        row = res.first()
+        if row:
+            ms, sem, mt = row
+            is_active = sem.starts_on <= today <= sem.ends_on
+            return is_active, sem.ends_on, sem.name, mt.name
+        return False, None, None, None
+
     async def get_roles_for_year(self, member_id: int, term_year: int) -> Sequence[str]:
         result = await self.session.execute(
             select(LeadershipRole.position).where(
@@ -256,8 +278,16 @@ class MemberRepository:
                 Membership.semester_id == semester_id,
             )
         )
-        if existing.scalars().first():
+        prior = existing.scalars().first()
+        if prior and prior.payment_id is not None:
             raise MembershipExistsError()
+        if prior:
+            # an earlier attempt was never paid (cancelled/failed): reuse it with the current choice and price
+            prior.membership_type_id = membership_type_id
+            prior.dues_amount = mtype.dues_amount
+            await self.session.flush()
+            await self.session.refresh(prior)
+            return prior
 
         membership = Membership(
             member_id=member_id,

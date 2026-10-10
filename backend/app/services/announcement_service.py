@@ -1,5 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import text
+
+from app.core.config import settings
+from app.services.notification_service import announce_notifications, notify
 from app.core.errors import NotFoundError
 from app.core.redis import enqueue_email
 from app.repositories.announcement_repo import AnnouncementRepository
@@ -15,15 +19,32 @@ class AnnouncementService:
         ann = await self.repo.create(data.title, data.body, posted_by)
         await self.session.commit()
 
+        # In-app notification for every registered member (the bell and OS notifications pick it up live)
+        ids = [r[0] for r in (await self.session.execute(text("SELECT member_id FROM members"))).all()]
+        await notify(self.session, ids, "announcement", ann.title, ann.body[:200], "#dashboard", f"ann:{ann.announcement_id}")
+        await self.session.commit()
+        await announce_notifications()
+
         # Enqueue broadcast email job to queue:emails
-        await enqueue_email(
-            {
-                "type": "announcement_broadcast",
-                "announcement_id": ann.announcement_id,
-                "title": ann.title,
-                "body": ann.body,
-            }
-        )
+        queued = False
+        if data.send_email:
+            queued = await enqueue_email(
+                {
+                    "type": "announcement_broadcast",
+                    "announcement_id": ann.announcement_id,
+                    "title": ann.title,
+                    "body": ann.body,
+                }
+            )
+
+        if not data.send_email:
+            email_status = "not_requested"
+        elif not queued:
+            email_status = "skipped_queue_unavailable"
+        elif not settings.smtp_configured:
+            email_status = "skipped_smtp_unconfigured"
+        else:
+            email_status = "queued"
 
         author_name = ann.author.full_name if ("author" in ann.__dict__ and ann.author) else None
         return AnnouncementResponse(
@@ -33,6 +54,7 @@ class AnnouncementService:
             posted_by=ann.posted_by,
             author_name=author_name,
             posted_at=ann.posted_at,
+            email_status=email_status,
         )
 
     async def list_announcements(self) -> list[AnnouncementResponse]:

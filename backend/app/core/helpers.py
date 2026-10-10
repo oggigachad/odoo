@@ -15,7 +15,16 @@ def to_decimal(amount: Decimal | int | float | str | None) -> Decimal:
     """Convert value to Decimal quantized to two decimal places."""
     if amount is None:
         return Decimal("0.00")
-    dec = Decimal(str(amount))
+    from decimal import InvalidOperation
+
+    from app.core.errors import ValidationError
+
+    try:
+        dec = Decimal(str(amount).strip())
+    except InvalidOperation as exc:
+        raise ValidationError("Amounts must be numbers, e.g. 250 or 250.50.") from exc
+    if not dec.is_finite() or dec < 0 or dec > Decimal("99999999"):
+        raise ValidationError("Enter a valid amount.")
     return dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 

@@ -1,0 +1,12 @@
+{
+  "name": "skyline-student-association",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Skyline Student Association platform. The web app lives in ./frontend, the API in ./backend.",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "install:all": "npm --prefix frontend install"
+  }
+}

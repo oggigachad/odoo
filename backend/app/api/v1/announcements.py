@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireOfficer
+from app.api.deps import RequireAnnouncer
 from app.core.database import get_db
 from app.schemas.announcements import AnnouncementCreate, AnnouncementResponse
 from app.schemas.auth import MemberInfo
@@ -34,7 +34,7 @@ async def get_announcement(
 @router.post("/announcements", response_model=AnnouncementResponse, status_code=status.HTTP_201_CREATED)
 async def create_announcement(
     payload: AnnouncementCreate,
-    current_officer: Annotated[MemberInfo, Depends(RequireOfficer)],
+    current_officer: Annotated[MemberInfo, Depends(RequireAnnouncer)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> AnnouncementResponse:
     """Officer creates an announcement and broadcasts emails to members."""

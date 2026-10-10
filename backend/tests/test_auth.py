@@ -37,3 +37,42 @@ async def test_unauthenticated_me_endpoint() -> None:
         assert response.status_code == 401
         data = response.json()
         assert data["error"]["code"] == "UNAUTHENTICATED"
+
+
+@pytest.mark.asyncio
+async def test_otp_generation_and_verification() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # 1. Generate OTP for registered admin
+        gen_res = await client.post("/api/v1/auth/otp/generate", json={"email": "admin@skyline.edu"})
+        assert gen_res.status_code == 200
+        data = gen_res.json()
+        assert "dev_otp" in data
+        assert len(data["dev_otp"]) == 6
+        otp_code = data["dev_otp"]
+
+        # 2. Verify OTP
+        verify_res = await client.post("/api/v1/auth/otp/verify", json={"email": "admin@skyline.edu", "otp": otp_code})
+        assert verify_res.status_code == 200
+        token_data = verify_res.json()
+        assert "token" in token_data
+        assert token_data["token_type"] == "bearer"
+
+        # 3. Access /auth/me with session token
+        me_res = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token_data['token']}"})
+        assert me_res.status_code == 200
+        profile = me_res.json()
+        assert profile["email"] == "admin@skyline.edu"
+        assert "Admin" in profile["roles"]
+
+
+@pytest.mark.asyncio
+async def test_otp_invalid_attempt() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # Generate OTP
+        await client.post("/api/v1/auth/otp/generate", json={"email": "treasurer@skyline.edu"})
+
+        # Submit wrong OTP
+        wrong_res = await client.post("/api/v1/auth/otp/verify", json={"email": "treasurer@skyline.edu", "otp": "000000"})
+        assert wrong_res.status_code == 401
+        err = wrong_res.json()
+        assert "Incorrect verification code" in err["error"]["message"]

@@ -1,0 +1,25 @@
+{
+  "name": "Skyline Student Association",
+  "short_name": "Skyline",
+  "description": "Events, tickets, shop and club management for the Skyline Student Association.",
+  "start_url": "/#dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#714B67",
+  "theme_color": "#714B67",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

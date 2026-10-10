@@ -4,7 +4,7 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ValidationError
 from app.core.helpers import format_money, to_decimal
 from app.models.schema_models import Order
 from app.repositories.member_repo import MemberRepository
@@ -36,6 +36,9 @@ class ShopService:
             price=price,
             member_price=member_price,
             non_member_limit=data.non_member_limit,
+            max_per_member=data.max_per_member,
+            max_per_guest=data.max_per_guest,
+            image_url=data.image_url,
         )
 
         variants: list[VariantResponse] = []
@@ -63,6 +66,9 @@ class ShopService:
             price=format_money(prod.price),
             member_price=format_money(prod.member_price),
             non_member_limit=prod.non_member_limit,
+            max_per_member=prod.max_per_member,
+            max_per_guest=prod.max_per_guest,
+            image_url=prod.image_url,
             non_member_units_taken=0,
             non_member_units_left=prod.non_member_limit,
             variants=variants,
@@ -71,8 +77,9 @@ class ShopService:
     async def list_products(self) -> list[ProductResponse]:
         products = await self.shop_repo.get_products()
         result: list[ProductResponse] = []
+        taken_by_product = await self.shop_repo.get_non_member_units_taken_all()
         for p in products:
-            taken = await self.shop_repo.get_non_member_units_taken(p.product_id)
+            taken = taken_by_product.get(p.product_id, 0)
             left = max(0, p.non_member_limit - taken)
             variants = [
                 VariantResponse(
@@ -91,6 +98,9 @@ class ShopService:
                     price=format_money(p.price),
                     member_price=format_money(p.member_price),
                     non_member_limit=p.non_member_limit,
+                    max_per_member=p.max_per_member,
+                    max_per_guest=p.max_per_guest,
+                    image_url=p.image_url,
                     non_member_units_taken=taken,
                     non_member_units_left=left,
                     variants=variants,
@@ -120,6 +130,9 @@ class ShopService:
             price=format_money(p.price),
             member_price=format_money(p.member_price),
             non_member_limit=p.non_member_limit,
+            max_per_member=p.max_per_member,
+            max_per_guest=p.max_per_guest,
+            image_url=p.image_url,
             non_member_units_taken=taken,
             non_member_units_left=left,
             variants=variants,
@@ -146,7 +159,10 @@ class ShopService:
         if data.member_id:
             is_active = await self.member_repo.has_active_membership(data.member_id, today)
 
+        if not is_active and not ((data.buyer_name or "").strip() and (data.buyer_email or "").strip()):
+            raise ValidationError("A name and email are needed to place the order.")
         items_input = [(it.variant_id, it.quantity) for it in data.items]
+        await self._enforce_person_limits(data, is_active)
         order = await self.shop_repo.place_order(
             member_id=data.member_id,
             buyer_name=data.buyer_name,
@@ -155,11 +171,78 @@ class ShopService:
             is_active_member=is_active,
         )
         await self.session.commit()
+        await self._broadcast_stock(order.order_id)
         return await self.get_order(order.order_id)
+
+    async def _enforce_person_limits(self, data: OrderCreate, is_member: bool) -> None:
+        """Per-person caps (admin/officer-configured) on how many units of one product a buyer may order."""
+        from sqlalchemy import text
+
+        from app.core.errors import PurchaseLimitError
+
+        wanted: dict[int, int] = {}
+        for it in data.items:
+            wanted[it.variant_id] = wanted.get(it.variant_id, 0) + it.quantity
+        rows = (
+            await self.session.execute(
+                text(
+                    "SELECT v.variant_id, p.product_id, p.name, p.max_per_member, p.max_per_guest "
+                    "FROM product_variants v JOIN products p ON p.product_id=v.product_id WHERE v.variant_id = ANY(:ids)"
+                ),
+                {"ids": list(wanted)},
+            )
+        ).all()
+        per_product: dict[int, tuple[str, Optional[int], int]] = {}
+        for vid, pid, name, mcap, gcap in rows:
+            cap = mcap if is_member else gcap
+            prev = per_product.get(pid, (name, cap, 0))
+            per_product[pid] = (name, cap, prev[2] + wanted[vid])
+        for pid, (name, cap, qty) in per_product.items():
+            if cap is None:
+                continue
+            held = (
+                await self.session.execute(
+                    text(
+                        "SELECT COALESCE(SUM(oi.quantity),0) FROM order_items oi "
+                        "JOIN orders o ON o.order_id=oi.order_id JOIN product_variants v ON v.variant_id=oi.variant_id "
+                        "WHERE v.product_id=:p AND o.status <> 'cancelled' "
+                        "AND (o.member_id = CAST(:m AS BIGINT) OR LOWER(o.buyer_email) = CAST(:e AS TEXT))"
+                    ),
+                    {"p": pid, "m": data.member_id, "e": (data.buyer_email or "").lower() or None},
+                )
+            ).scalar_one()
+            if held + qty > cap:
+                who = "members" if is_member else "non-members"
+                raise PurchaseLimitError(f"Limit reached: {who} can order at most {cap} unit(s) of {name} per person.")
+
+    async def update_limits(self, product_id: int, max_per_member: Optional[int], max_per_guest: Optional[int]) -> None:
+        from app.models.schema_models import Product
+
+        prod = await self.session.get(Product, product_id)
+        if not prod:
+            raise NotFoundError("Product not found.")
+        prod.max_per_member = max_per_member
+        prod.max_per_guest = max_per_guest
+        await self.session.commit()
+
+    async def _broadcast_stock(self, order_id: int) -> None:
+        """Push the new stock level of every variant in the order to all connected clients."""
+        from app.core.realtime import publish_event
+
+        order = await self.shop_repo.get_order_by_id(order_id)
+        if not order:
+            return
+        for it in order.items:
+            if it.variant:
+                await publish_event(
+                    "stock_updated",
+                    {"variant_id": it.variant_id, "size": it.variant.size, "stock": it.variant.stock_quantity},
+                )
 
     async def cancel_order(self, order_id: int) -> OrderCancelResponse:
         order = await self.shop_repo.cancel_order(order_id)
         await self.session.commit()
+        await self._broadcast_stock(order_id)
         return OrderCancelResponse(
             order_id=order.order_id,
             status=order.status,
@@ -176,8 +259,9 @@ class ShopService:
         self,
         member_id: Optional[int] = None,
         status: Optional[str] = None,
+        buyer_email: Optional[str] = None,
     ) -> list[OrderResponse]:
-        orders = await self.shop_repo.list_orders(member_id=member_id, status=status)
+        orders = await self.shop_repo.list_orders(member_id=member_id, status=status, buyer_email=buyer_email)
         return [self._format_order(o) for o in orders]
 
     def _format_order(self, order: Order) -> OrderResponse:

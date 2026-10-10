@@ -3,7 +3,7 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireOfficer, get_current_member
+from app.api.deps import RequireAdmin, RequireOfficer, get_current_member, is_officer
 from app.core.database import get_db
 from app.core.errors import ForbiddenError
 from app.schemas.auth import MemberInfo
@@ -26,11 +26,7 @@ from app.services.member_service import MemberService
 
 router = APIRouter(tags=["Members"])
 
-OFFICER_ROLES = {"president", "vice president", "secretary", "treasurer", "officer"}
-
-
-def check_is_officer(user: MemberInfo) -> bool:
-    return any(r.lower() in OFFICER_ROLES for r in user.roles)
+check_is_officer = is_officer
 
 
 @router.post("/members", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
@@ -204,10 +200,10 @@ async def list_leadership_roles(
 @router.post("/leadership", response_model=LeadershipRoleResponse, status_code=status.HTTP_201_CREATED)
 async def add_leadership_role(
     payload: LeadershipRoleCreate,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    _: Annotated[MemberInfo, Depends(RequireAdmin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> LeadershipRoleResponse:
-    """Officer add leadership role."""
+    """Admin assigns a position (Officer, Treasurer, ...) to a member."""
     service = MemberService(db)
     return await service.add_leadership(payload)
 
@@ -215,9 +211,9 @@ async def add_leadership_role(
 @router.delete("/leadership/{leadership_role_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_leadership_role(
     leadership_role_id: int,
-    _: Annotated[MemberInfo, Depends(RequireOfficer)],
+    _: Annotated[MemberInfo, Depends(RequireAdmin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    """Officer remove leadership role."""
+    """Admin removes a position."""
     service = MemberService(db)
     await service.remove_leadership(leadership_role_id)

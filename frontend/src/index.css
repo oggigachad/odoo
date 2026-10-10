@@ -1,0 +1,36 @@
+@import url('https://db.onlinewebfonts.com/c/69f2576e7ca287875bf8d089130e292c?family=TT+Firs+Neue');
+@import url('https://db.onlinewebfonts.com/c/0884d17cb11ba81fc10318f784a5133e?family=TT+Firs+Neue+Trl');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-display: 'TT Firs Neue', sans-serif;
+  --font-body: 'TT Firs Neue Trl', sans-serif;
+  --font-inter: 'Inter', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  background-color: #714B67;
+  scroll-behavior: smooth;
+}
+
+.clouds-position { bottom: 0; }
+@media (min-width: 768px)  { .clouds-position { bottom: -15%; } }
+@media (min-width: 1024px) { .clouds-position { bottom: -30%; } }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(113, 75, 103, 0.4); border-radius: 99px; }
+
+/* Inputs, buttons and selects inherit the page font (TT Firs Neue, as on landing/login) */
+button, input, select, textarea { font-family: inherit; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.animate-fadeIn { animation: fadeIn 0.25s ease-out both; }
+
+/* TT Firs Neue ships a single weight: cap heavy weights so it never renders as smeared faux-bold */
+.dash-root .font-black, .dash-root .font-extrabold, .dash-root .font-bold { font-weight: 600; }
+.dash-root { background: #fff; }
+.dash-root ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); }

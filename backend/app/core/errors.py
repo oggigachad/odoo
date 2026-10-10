@@ -248,3 +248,12 @@ class InternalError(APIException):
         details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(code="INTERNAL_ERROR", message=message, status_code=500, details=details)
+
+
+class PurchaseLimitError(APIException):
+    def __init__(
+        self,
+        message: str = "You have reached the purchase limit set for this item.",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(code="PURCHASE_LIMIT_REACHED", message=message, status_code=409, details=details)

@@ -18,7 +18,9 @@ CREATE TABLE members (
     full_name   TEXT        NOT NULL,
     email       TEXT        NOT NULL,
     phone       TEXT,
-    joined_on   DATE        NOT NULL DEFAULT CURRENT_DATE
+    joined_on   DATE        NOT NULL DEFAULT CURRENT_DATE,
+    password_hash TEXT,                 -- pbkdf2_sha256$iterations$salt$hash (NULL = passwordless/OTP-only)
+    student_id    TEXT                  -- campus enrollment number (optional)
 );
 CREATE UNIQUE INDEX members_email_uq ON members (LOWER(email));
 
@@ -105,7 +107,8 @@ CREATE TABLE events (
     title       TEXT        NOT NULL,              -- e.g. 'Spring Gala'
     description TEXT,
     venue       TEXT,
-    starts_at   TIMESTAMPTZ NOT NULL
+    starts_at   TIMESTAMPTZ NOT NULL,
+    form_url    TEXT
 );
 
 -- Prices, total seat limit and non-member seat limit
@@ -113,10 +116,13 @@ CREATE TABLE ticket_types (
     ticket_type_id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     event_id               BIGINT        NOT NULL REFERENCES events (event_id),
     name                   TEXT          NOT NULL DEFAULT 'General',
+    description            TEXT,
     member_price           NUMERIC(10,2) NOT NULL CHECK (member_price >= 0),
     non_member_price       NUMERIC(10,2) NOT NULL CHECK (non_member_price >= 0),
     seat_limit             INTEGER       NOT NULL CHECK (seat_limit > 0),
     non_member_seat_limit  INTEGER       NOT NULL CHECK (non_member_seat_limit >= 0 AND non_member_seat_limit <= seat_limit),
+    max_per_member         INTEGER       CHECK (max_per_member IS NULL OR max_per_member > 0), -- per-person cap for members (NULL = none)
+    max_per_guest          INTEGER       CHECK (max_per_guest IS NULL OR max_per_guest > 0),   -- per-person cap for non-members
     UNIQUE (event_id, name)
 );
 
@@ -191,7 +197,11 @@ CREATE TABLE products (
     description      TEXT,
     price            NUMERIC(10,2) NOT NULL CHECK (price >= 0),        -- non-member price
     member_price     NUMERIC(10,2) NOT NULL CHECK (member_price >= 0), -- member price
-    non_member_limit INTEGER       NOT NULL DEFAULT 0 CHECK (non_member_limit >= 0) -- 0 = members only
+    non_member_limit INTEGER       NOT NULL DEFAULT 0 CHECK (non_member_limit >= 0), -- 0 = members only
+    image_url        TEXT,
+    is_active        BOOLEAN       NOT NULL DEFAULT TRUE,   -- FALSE = removed from the shop but kept for order history
+    max_per_member   INTEGER       CHECK (max_per_member IS NULL OR max_per_member > 0), -- per-person cap for members
+    max_per_guest    INTEGER       CHECK (max_per_guest IS NULL OR max_per_guest > 0)    -- per-person cap for non-members
 );
 
 CREATE TABLE product_variants (
@@ -383,4 +393,35 @@ SELECT (SELECT COALESCE(SUM(amount), 0) FROM payments)
      - (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE status = 'reimbursed')
        AS balance;
 
+-- ---------------------------------------------------------------------
+-- In-app notifications (renewal reminders, event reminders, announcements, payments)
+-- ---------------------------------------------------------------------
+CREATE TABLE notifications (
+    notification_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    member_id       BIGINT      NOT NULL REFERENCES members (member_id) ON DELETE CASCADE,
+    kind            TEXT        NOT NULL,
+    title           TEXT        NOT NULL,
+    body            TEXT,
+    link            TEXT,
+    ref             TEXT,                       -- dedupe key, e.g. 'renewal:12:30'
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    read_at         TIMESTAMPTZ
+);
+CREATE INDEX notifications_member_idx ON notifications (member_id, created_at DESC);
+CREATE UNIQUE INDEX notifications_dedupe_uq ON notifications (member_id, kind, ref) WHERE ref IS NOT NULL;
+
 COMMIT;
+
+-- Indexes for the hot paths (door lookup, my tickets, reports, shop listing)
+CREATE INDEX IF NOT EXISTS tickets_member_idx ON tickets (member_id);
+CREATE INDEX IF NOT EXISTS tickets_email_idx ON tickets (lower(holder_email));
+CREATE INDEX IF NOT EXISTS tickets_payment_idx ON tickets (payment_id) WHERE payment_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS payments_member_idx ON payments (member_id);
+CREATE INDEX IF NOT EXISTS payments_paid_at_idx ON payments (paid_at DESC);
+CREATE INDEX IF NOT EXISTS orders_status_idx ON orders (status);
+CREATE INDEX IF NOT EXISTS order_items_variant_idx ON order_items (variant_id);
+CREATE INDEX IF NOT EXISTS announcements_posted_idx ON announcements (posted_at DESC);
+CREATE INDEX IF NOT EXISTS expenses_status_idx ON expenses (status);
+CREATE INDEX IF NOT EXISTS events_starts_idx ON events (starts_at);
+CREATE INDEX IF NOT EXISTS memberships_payment_idx ON memberships (payment_id) WHERE payment_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS products_active_idx ON products (product_id) WHERE is_active;

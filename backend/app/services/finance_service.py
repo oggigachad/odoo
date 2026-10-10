@@ -1,10 +1,20 @@
+from app.core.errors import ServiceUnavailableError
+import json
+import hashlib
+import hmac
+from decimal import Decimal
 from typing import Optional
+import uuid
 
+import razorpay
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.errors import PaymentSignatureInvalidError, ValidationError
 from app.core.helpers import format_money, to_decimal
-from app.core.redis import get_report_cache, invalidate_report_caches, set_report_cache
-from app.models.schema_models import Expense
+from app.core.redis import get_redis_client, get_report_cache, invalidate_report_caches, set_report_cache
+from app.models.schema_models import Expense, Membership, Order, Ticket
 from app.repositories.finance_repo import FinanceRepository
 from app.schemas.finance import (
     CashPaymentCreate,
@@ -13,6 +23,10 @@ from app.schemas.finance import (
     ExpenseResponse,
     PaymentResponse,
     PaymentWebhookPayload,
+    RazorpayOrderCreate,
+    RazorpayOrderResponse,
+    RazorpayVerifyRequest,
+    RazorpayVerifyResponse,
     TreasurerSummaryItem,
 )
 
@@ -170,3 +184,187 @@ class FinanceService:
             status=exp.status,
             reimbursed_at=exp.reimbursed_at,
         )
+
+    async def _order_total(self, order_id: int) -> Decimal:
+        """Orders have no stored total: it is always the sum of their lines."""
+        from sqlalchemy import text
+
+        total = (await self.session.execute(
+            text("SELECT COALESCE(SUM(quantity * unit_price), 0) FROM order_items WHERE order_id = :o"), {"o": order_id})).scalar_one()
+        return to_decimal(total)
+
+    async def create_razorpay_order(self, data: RazorpayOrderCreate, member_id: int) -> RazorpayOrderResponse:
+        """Secure server-side creation of Razorpay order with strict database price verification."""
+        if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
+            raise ValidationError("Razorpay payment gateway keys are not configured in environment.")
+
+        # Cryptographic & database price integrity verification
+        verified_amount = to_decimal(data.amount)
+        if data.category == "dues" and data.membership_id:
+            m = await self.session.get(Membership, data.membership_id)
+            if not m:
+                raise ValidationError("Membership record not found.")
+            if m.dues_amount != verified_amount:
+                raise ValidationError(f"Price mismatch: Expected dues ₹{m.dues_amount}, got ₹{data.amount}")
+        elif data.category == "ticket" and data.ticket_ids:
+            res = await self.session.execute(select(Ticket).where(Ticket.ticket_id.in_(data.ticket_ids)))
+            tickets = res.scalars().all()
+            if not tickets:
+                raise ValidationError("Ticket records not found.")
+            expected_total = sum((t.price_paid for t in tickets), Decimal("0.00"))
+            if expected_total != verified_amount:
+                raise ValidationError(f"Price mismatch: Expected tickets ₹{expected_total}, got ₹{data.amount}")
+        elif data.category == "merchandise" and data.order_id:
+            o = await self.session.get(Order, data.order_id)
+            if not o:
+                raise ValidationError("Order not found.")
+            if o.status != "placed":
+                raise ValidationError("This order is already paid, cancelled or expired. Place it again from the shop.")
+            order_total = await self._order_total(data.order_id)
+            if order_total != verified_amount:
+                raise ValidationError(f"Price mismatch: Expected order ₹{order_total}, got ₹{data.amount}")
+
+        amount_paise = int(verified_amount * 100)
+        if amount_paise <= 0:
+            raise ValidationError("Payment amount must be greater than zero.")
+
+        # Create Razorpay order via Razorpay SDK
+        client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+        order_receipt = f"rcpt_{data.category}_{member_id}_{uuid.uuid4().hex[:6]}"
+        rp_order = client.order.create({
+            "amount": amount_paise,
+            "currency": "INR",
+            "receipt": order_receipt,
+            "notes": {
+                "category": data.category,
+                "member_id": str(member_id),
+                "membership_id": str(data.membership_id or ""),
+                "ticket_ids": ",".join(str(tid) for tid in (data.ticket_ids or [])),
+                "order_id": str(data.order_id or ""),
+            },
+        })
+
+        # Remember what this order was for, so verify() can refuse a signature from a cheaper order being
+        # replayed against a different membership / ticket / order.
+        try:
+            await get_redis_client().set(
+                f"oddo:v1:rzp:{rp_order['id']}",
+                json.dumps(
+                    {
+                        "member_id": member_id,
+                        "category": data.category,
+                        "membership_id": data.membership_id,
+                        "ticket_ids": sorted(data.ticket_ids or []),
+                        "order_id": data.order_id,
+                        "fundraiser_id": data.fundraiser_id,
+                        "amount_paise": amount_paise,
+                    }
+                ),
+                ex=3600,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise ServiceUnavailableError("Payments are temporarily unavailable. Please try again.") from exc
+
+        return RazorpayOrderResponse(
+            order_id=rp_order["id"],
+            amount=rp_order["amount"],
+            currency="INR",
+            key_id=settings.RAZORPAY_KEY_ID,
+        )
+
+    async def verify_razorpay_payment(self, data: RazorpayVerifyRequest, member_id: int) -> RazorpayVerifyResponse:
+        """Cryptographically verify Razorpay signature and commit payment to database."""
+        if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
+            raise ValidationError("Razorpay payment gateway keys are not configured in environment.")
+
+        # 1. Cryptographically verify signature using HMAC-SHA256
+        msg = f"{data.razorpay_order_id}|{data.razorpay_payment_id}".encode("utf-8")
+        expected_sig = hmac.new(settings.RAZORPAY_KEY_SECRET.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected_sig, data.razorpay_signature):
+            raise PaymentSignatureInvalidError("Invalid Razorpay payment signature.")
+
+        # 1b. The order must have been created by this member for exactly these items
+        raw = await get_redis_client().get(f"oddo:v1:rzp:{data.razorpay_order_id}")
+        if not raw:
+            raise ValidationError("This payment session expired or is unknown. If money was deducted it is matched automatically by the webhook.")
+        bound = json.loads(raw)
+        if (
+            bound["member_id"] != member_id
+            or bound["category"] != data.category
+            or bound["membership_id"] != data.membership_id
+            or bound["ticket_ids"] != sorted(data.ticket_ids or [])
+            or bound["order_id"] != data.order_id
+        ):
+            raise PaymentSignatureInvalidError("This payment does not match the order it was created for.")
+
+        # 2. Check for duplicate processing (idempotency)
+        existing = await self.repo.get_payment_by_external_ref(data.razorpay_payment_id)
+        if existing:
+            from app.services.auth_service import AuthService
+
+            cur = await AuthService(self.session).get_current_user_info(member_id)
+            return RazorpayVerifyResponse(
+                status="already_processed",
+                payment_id=existing.payment_id,
+                is_active=cur.is_active,
+                role=cur.role,
+                message="Payment was already recorded.",
+            )
+
+        # 3. Determine verified amount from database entity
+        amount = Decimal("0.00")
+        if data.membership_id:
+            m = await self.session.get(Membership, data.membership_id)
+            if m:
+                amount = m.dues_amount
+        elif data.ticket_ids:
+            res = await self.session.execute(select(Ticket).where(Ticket.ticket_id.in_(data.ticket_ids)))
+            tickets = res.scalars().all()
+            amount = sum((t.price_paid for t in tickets), Decimal("0.00"))
+        elif data.order_id:
+            o = await self.session.get(Order, data.order_id)
+            if o:
+                amount = await self._order_total(data.order_id)
+
+        if amount <= Decimal("0.00"):
+            # fundraiser donations have no database price: use what was actually charged for this order
+            amount = to_decimal(Decimal(bound["amount_paise"]) / 100)
+        if amount <= Decimal("0.00"):
+            raise ValidationError("Could not determine the amount for this payment.")
+
+
+        # 4. Record payment in database and link to membership/tickets/order
+        payment = await self.repo.create_payment(
+            category=data.category,
+            amount=amount,
+            method="online",
+            member_id=member_id,
+            fundraiser_id=data.fundraiser_id,
+            external_ref=data.razorpay_payment_id,
+        )
+        await self.repo.link_payment(
+            payment_id=payment.payment_id,
+            membership_id=data.membership_id,
+            order_id=data.order_id,
+            ticket_ids=data.ticket_ids,
+        )
+        await self.session.commit()
+        await invalidate_report_caches()
+
+        from app.services.auth_service import AuthService
+
+        info = await AuthService(self.session).get_current_user_info(member_id)
+        messages = {
+            "dues": "Payment received. Your membership is now active.",
+            "ticket": "Payment received. Your ticket is now valid.",
+            "merchandise": "Payment received. Your order is paid.",
+            "fundraiser": "Thank you. Your donation was received.",
+        }
+        return RazorpayVerifyResponse(
+            status="success",
+            payment_id=payment.payment_id,
+            is_active=info.is_active,
+            role=info.role,
+            message=messages.get(data.category, "Payment received."),
+        )
+

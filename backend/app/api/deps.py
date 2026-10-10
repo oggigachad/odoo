@@ -43,5 +43,39 @@ def require_role(allowed_roles: list[str]) -> Callable[[MemberInfo], Awaitable[M
     return role_checker
 
 
-RequireOfficer = require_role(["President", "Vice President", "Secretary", "Treasurer", "Officer"])
-RequireTreasurer = require_role(["Treasurer"])
+# Single source of truth for who counts as what (compared case-insensitively).
+FINANCE_POSITIONS = ("Treasurer", "Accountant", "Admin")
+OFFICER_POSITIONS = ("President", "Vice President", "Secretary", "Officer", *FINANCE_POSITIONS)
+
+# Announcements are written by the admin or officers (not by the finance roles)
+ANNOUNCER_POSITIONS = ("Admin", "President", "Vice President", "Secretary", "Officer")
+ASSIGNABLE_POSITIONS = ("Admin", "President", "Vice President", "Secretary", "Treasurer", "Accountant", "Officer")
+
+RequireOfficer = require_role(list(OFFICER_POSITIONS))
+RequireAdmin = require_role(["Admin"])
+RequireAnnouncer = require_role(list(ANNOUNCER_POSITIONS))
+RequireTreasurer = require_role(list(FINANCE_POSITIONS))
+
+
+def is_officer(user: MemberInfo) -> bool:
+    officer_lower = {p.lower() for p in OFFICER_POSITIONS}
+    return any(r.lower() in officer_lower for r in user.roles)
+
+
+def is_finance(user: MemberInfo) -> bool:
+    finance_lower = {p.lower() for p in FINANCE_POSITIONS}
+    return any(r.lower() in finance_lower for r in user.roles)
+
+
+async def get_optional_member(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MemberInfo | None:
+    """Like get_current_member but returns None for anonymous callers (public checkout flows)."""
+    if not credentials and "session" not in request.cookies:
+        return None
+    try:
+        return await get_current_member(request, credentials, db)
+    except UnauthenticatedError:
+        return None

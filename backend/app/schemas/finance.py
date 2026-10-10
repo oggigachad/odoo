@@ -70,3 +70,45 @@ class ClubBalanceResponse(BaseModel):
     total_in: str
     total_out: str
     balance: str
+
+
+class RazorpayConfigResponse(BaseModel):
+    key_id: Optional[str] = None
+
+
+class RazorpayOrderCreate(BaseModel):
+    category: str = Field(..., pattern="^(dues|ticket|merchandise|fundraiser)$")
+    amount: str
+    membership_id: Optional[int] = None
+    ticket_ids: Optional[list[int]] = None
+    order_id: Optional[int] = None
+    fundraiser_id: Optional[int] = None
+
+
+class RazorpayOrderResponse(BaseModel):
+    order_id: str
+    amount: int  # in paise
+    currency: str = "INR"
+    key_id: str
+
+
+class RazorpayVerifyRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    category: str = Field(..., pattern="^(dues|ticket|merchandise|fundraiser)$")
+    amount: Optional[str] = None
+    membership_id: Optional[int] = None
+    ticket_ids: Optional[list[int]] = None
+    order_id: Optional[int] = None
+    fundraiser_id: Optional[int] = None
+
+
+
+class RazorpayVerifyResponse(BaseModel):
+    status: str
+    payment_id: int
+    is_active: bool
+    role: str
+    message: str
+

@@ -3,7 +3,7 @@ import uuid
 from decimal import Decimal
 from typing import Optional, Sequence
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import Text, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -84,14 +84,20 @@ class EventRepository:
         non_member_price: Decimal,
         seat_limit: int,
         non_member_seat_limit: int,
+        max_per_member: Optional[int] = None,
+        max_per_guest: Optional[int] = None,
+        description: Optional[str] = None,
     ) -> TicketType:
         ttype = TicketType(
             event_id=event_id,
             name=name.strip(),
+            description=(description or None),
             member_price=member_price,
             non_member_price=non_member_price,
             seat_limit=seat_limit,
             non_member_seat_limit=non_member_seat_limit,
+            max_per_member=max_per_member,
+            max_per_guest=max_per_guest,
         )
         self.session.add(ttype)
         await self.session.flush()
@@ -272,6 +278,53 @@ class EventRepository:
 
         return ticket, event
 
+    async def resolve_manual_code(self, prefix: str, event_id: int) -> Optional[str]:
+        """Resolve the 8-char manual code printed on a ticket to its full code (unique within an event)."""
+        pattern = prefix.lower() + "%"
+        result = await self.session.execute(
+            select(Ticket.ticket_code)
+            .join(TicketType, TicketType.ticket_type_id == Ticket.ticket_type_id)
+            .where(TicketType.event_id == event_id, func.cast(Ticket.ticket_code, Text).like(pattern))
+        )
+        codes = result.scalars().all()
+        return str(codes[0]) if len(codes) == 1 else None
+
+    async def get_ticket_with_event(self, ticket_code_str: str) -> Optional[tuple[Ticket, TicketType, Event]]:
+        try:
+            code_uuid = uuid.UUID(ticket_code_str.strip())
+        except ValueError:
+            return None
+        result = await self.session.execute(
+            select(Ticket, TicketType, Event)
+            .join(TicketType, TicketType.ticket_type_id == Ticket.ticket_type_id)
+            .join(Event, Event.event_id == TicketType.event_id)
+            .where(Ticket.ticket_code == code_uuid)
+        )
+        row = result.first()
+        return (row[0], row[1], row[2]) if row else None
+
+    async def get_ticket_context(self, ticket_type_ids: list[int]) -> dict[int, tuple[TicketType, Event]]:
+        if not ticket_type_ids:
+            return {}
+        result = await self.session.execute(
+            select(TicketType, Event)
+            .join(Event, Event.event_id == TicketType.event_id)
+            .where(TicketType.ticket_type_id.in_(set(ticket_type_ids)))
+        )
+        return {tt.ticket_type_id: (tt, ev) for tt, ev in result.all()}
+
+    async def get_manifest_tickets(self, event_id: int) -> Sequence[tuple[Ticket, TicketType]]:
+        result = await self.session.execute(
+            select(Ticket, TicketType)
+            .join(TicketType, TicketType.ticket_type_id == Ticket.ticket_type_id)
+            .where(
+                TicketType.event_id == event_id,
+                ((Ticket.payment_id.is_not(None)) | (Ticket.price_paid == 0)),
+            )
+            .order_by(Ticket.ticket_id)
+        )
+        return [(r[0], r[1]) for r in result.all()]
+
     async def get_ticket_by_code(self, ticket_code_str: str) -> Optional[Ticket]:
         try:
             code_uuid = uuid.UUID(ticket_code_str.strip())
@@ -280,11 +333,14 @@ class EventRepository:
         result = await self.session.execute(select(Ticket).where(Ticket.ticket_code == code_uuid))
         return result.scalars().first()
 
-    async def get_tickets_by_member(self, member_id: int) -> Sequence[Ticket]:
+    async def get_tickets_by_member(self, member_id: int, email: Optional[str] = None) -> Sequence[Ticket]:
+        cond = Ticket.member_id == member_id
+        if email:
+            cond = cond | (func.lower(Ticket.holder_email) == email.lower())
         result = await self.session.execute(
             select(Ticket)
             .options(selectinload(Ticket.ticket_type).selectinload(TicketType.event))
-            .where(Ticket.member_id == member_id)
+            .where(cond)
             .order_by(Ticket.purchased_at.desc())
         )
         return result.scalars().all()

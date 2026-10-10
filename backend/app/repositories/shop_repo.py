@@ -26,6 +26,9 @@ class ShopRepository:
         price: Decimal,
         member_price: Decimal,
         non_member_limit: int = 0,
+        max_per_member: Optional[int] = None,
+        max_per_guest: Optional[int] = None,
+        image_url: Optional[str] = None,
     ) -> Product:
         prod = Product(
             name=name.strip(),
@@ -33,6 +36,9 @@ class ShopRepository:
             price=price,
             member_price=member_price,
             non_member_limit=non_member_limit,
+            max_per_member=max_per_member,
+            max_per_guest=max_per_guest,
+            image_url=image_url,
         )
         self.session.add(prod)
         await self.session.flush()
@@ -41,7 +47,7 @@ class ShopRepository:
 
     async def get_products(self) -> Sequence[Product]:
         result = await self.session.execute(
-            select(Product).options(selectinload(Product.variants)).order_by(Product.product_id.asc())
+            select(Product).options(selectinload(Product.variants)).where(Product.is_active.is_(True)).order_by(Product.product_id.asc())
         )
         return result.scalars().all()
 
@@ -70,6 +76,17 @@ class ShopRepository:
         await self.session.flush()
         await self.session.refresh(variant)
         return variant
+
+    async def get_non_member_units_taken_all(self) -> dict[int, int]:
+        """One grouped query for every product (avoids one query per product when listing the shop)."""
+        stmt = (
+            select(ProductVariant.product_id, func.coalesce(func.sum(OrderItem.quantity), 0))
+            .join(OrderItem, OrderItem.variant_id == ProductVariant.variant_id)
+            .join(Order, Order.order_id == OrderItem.order_id)
+            .where(Order.member_id.is_(None), Order.status.in_(["placed", "paid"]))
+            .group_by(ProductVariant.product_id)
+        )
+        return {pid: int(n) for pid, n in (await self.session.execute(stmt)).all()}
 
     async def get_non_member_units_taken(self, product_id: int) -> int:
         stmt = (
@@ -216,13 +233,16 @@ class ShopRepository:
         self,
         member_id: Optional[int] = None,
         status: Optional[str] = None,
+        buyer_email: Optional[str] = None,
     ) -> Sequence[Order]:
         stmt = (
             select(Order)
             .options(selectinload(Order.items).selectinload(OrderItem.variant).selectinload(ProductVariant.product))
             .order_by(Order.ordered_at.desc())
         )
-        if member_id:
+        if member_id and buyer_email:
+            stmt = stmt.where((Order.member_id == member_id) | (func.lower(Order.buyer_email) == buyer_email.lower()))
+        elif member_id:
             stmt = stmt.where(Order.member_id == member_id)
         if status:
             stmt = stmt.where(Order.status == status)

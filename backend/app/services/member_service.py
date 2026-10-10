@@ -47,9 +47,7 @@ class MemberService:
         if not member:
             raise NotFoundError("Member not found.")
 
-        today = datetime.date.today()
-        is_active = await self.repo.has_active_membership(member_id, today)
-        valid_until = await self.repo.get_latest_valid_until(member_id)
+        is_active, valid_until, sem_name, mtype_name = await self.repo.get_membership_info(member_id)
 
         return MemberResponse(
             member_id=member.member_id,
@@ -59,15 +57,16 @@ class MemberService:
             joined_on=member.joined_on,
             is_active=is_active,
             valid_until=valid_until,
+            semester_name=sem_name,
+            membership_type=mtype_name,
+            student_id=member.student_id,
         )
 
     async def update_member(self, member_id: int, data: MemberUpdate) -> MemberResponse:
         member = await self.repo.update(member_id, data.full_name, data.phone)
         await self.session.commit()
 
-        today = datetime.date.today()
-        is_active = await self.repo.has_active_membership(member_id, today)
-        valid_until = await self.repo.get_latest_valid_until(member_id)
+        is_active, valid_until, sem_name, mtype_name = await self.repo.get_membership_info(member_id)
 
         return MemberResponse(
             member_id=member.member_id,
@@ -77,17 +76,18 @@ class MemberService:
             joined_on=member.joined_on,
             is_active=is_active,
             valid_until=valid_until,
+            semester_name=sem_name,
+            membership_type=mtype_name,
+            student_id=member.student_id,
         )
 
     async def search_members(
         self, query: Optional[str], active: Optional[bool], limit: int, offset: int
     ) -> PaginatedMembers:
         members, total = await self.repo.search(query, active, limit, offset)
-        today = datetime.date.today()
         items: list[MemberResponse] = []
         for m in members:
-            is_active = await self.repo.has_active_membership(m.member_id, today)
-            valid_until = await self.repo.get_latest_valid_until(m.member_id)
+            is_active, valid_until, sem_name, mtype_name = await self.repo.get_membership_info(m.member_id)
             items.append(
                 MemberResponse(
                     member_id=m.member_id,
@@ -97,6 +97,9 @@ class MemberService:
                     joined_on=m.joined_on,
                     is_active=is_active,
                     valid_until=valid_until,
+                    semester_name=sem_name,
+                    membership_type=mtype_name,
+                    student_id=m.student_id,
                 )
             )
         return PaginatedMembers(items=items, total=total, limit=limit, offset=offset)
@@ -265,6 +268,23 @@ class MemberService:
         )
 
     async def remove_leadership(self, leadership_role_id: int) -> None:
+        from sqlalchemy import text
+
+        row = (
+            await self.session.execute(
+                text("SELECT position, term_year FROM leadership_roles WHERE leadership_role_id=:i"), {"i": leadership_role_id}
+            )
+        ).first()
+        if row and row[0].lower() == "admin":
+            admins = (
+                await self.session.execute(
+                    text("SELECT COUNT(*) FROM leadership_roles WHERE LOWER(position)='admin' AND term_year=:y"), {"y": row[1]}
+                )
+            ).scalar_one()
+            if admins <= 1:
+                from app.core.errors import ValidationError
+
+                raise ValidationError("You cannot remove the last Admin.")
         deleted = await self.repo.delete_leadership_role(leadership_role_id)
         if not deleted:
             raise NotFoundError("Leadership role not found.")

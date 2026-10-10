@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireOfficer, get_current_member
+from app.api.deps import RequireOfficer, get_current_member, is_officer
 from app.core.database import get_db
 from app.schemas.auth import MemberInfo
 from app.schemas.fundraisers import (
@@ -18,11 +18,7 @@ from app.services.fundraiser_service import FundraiserService
 
 router = APIRouter(tags=["Fundraisers"])
 
-OFFICER_ROLES = {"president", "vice president", "secretary", "treasurer", "officer"}
-
-
-def check_is_officer(user: MemberInfo) -> bool:
-    return any(r.lower() in OFFICER_ROLES for r in user.roles)
+check_is_officer = is_officer
 
 
 @router.get("/fundraisers", response_model=list[FundraiserResponse])

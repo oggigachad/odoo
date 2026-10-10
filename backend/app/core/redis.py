@@ -154,14 +154,18 @@ async def store_magic_link_token(
 
 async def consume_magic_link_token(token: str) -> Optional[dict[str, Any]]:
     """
-    Atomically retrieves and deletes the token (single-use link via GETDEL).
+    Atomically retrieves and deletes the token (single-use link via GETDEL or Lua fallback).
     Returns None if missing, already used, or Redis error.
     """
     try:
         client = get_redis_client()
         key = _make_key(f"signin:{token}")
-        # GETDEL guarantees atomic one-time consumption
-        val = await client.getdel(key)
+        try:
+            val = await client.getdel(key)
+        except Exception:
+            # Atomic single-use fallback for Redis < 6.2
+            lua = "local v = redis.call('GET', KEYS[1]); if v then redis.call('DEL', KEYS[1]) end; return v"
+            val = await client.eval(lua, 1, key)
         if val is not None:
             return json.loads(val)  # type: ignore[no-any-return]
         return None
@@ -198,3 +202,54 @@ async def dequeue_email(timeout: int = 1) -> Optional[dict[str, Any]]:
     except Exception as exc:
         logger.warning(f"Failed to dequeue email from Redis: {exc}")
         return None
+
+
+# ---------------------------------------------------------------------
+# Job 5: One-Time Passcodes (OTP) (otp:{email}, 5 min TTL)
+# ---------------------------------------------------------------------
+async def store_otp(email: str, otp: str, ttl_seconds: int = 300) -> bool:
+    """Store 6-digit OTP code in Redis with TTL and attempt counter."""
+    try:
+        client = get_redis_client()
+        key = _make_key(f"otp:{email.lower()}")
+        data = {"otp": otp, "attempts": 0}
+        await client.set(key, json.dumps(data), ex=ttl_seconds)
+        return True
+    except Exception as exc:
+        logger.error(f"Failed to store OTP in Redis: {exc}")
+        return False
+
+
+async def verify_and_consume_otp(email: str, otp: str, max_attempts: int = 5) -> tuple[bool, str]:
+    """
+    Verify OTP with brute-force attempt throttling.
+    Returns (is_valid, message). On success, atomically removes OTP.
+    """
+    try:
+        client = get_redis_client()
+        key = _make_key(f"otp:{email.lower()}")
+        val = await client.get(key)
+        if not val:
+            return False, "OTP has expired or is invalid. Please request a new one."
+
+        data = json.loads(val)
+        current_attempts = data.get("attempts", 0)
+
+        if current_attempts >= max_attempts:
+            await client.delete(key)
+            return False, "Maximum verification attempts exceeded. For security, please request a new OTP."
+
+        if data.get("otp") != otp.strip():
+            data["attempts"] = current_attempts + 1
+            ttl = await client.ttl(key)
+            if ttl > 0:
+                await client.set(key, json.dumps(data), ex=ttl)
+            remaining = max_attempts - data["attempts"]
+            return False, f"Incorrect verification code. {remaining} attempt(s) remaining."
+
+        # Correct OTP: delete to guarantee single-use consumption
+        await client.delete(key)
+        return True, "Verification successful."
+    except Exception as exc:
+        logger.error(f"Failed to verify OTP from Redis: {exc}")
+        return False, "Authentication service error."

@@ -76,7 +76,10 @@ async def test_shop_orders_and_non_member_limit() -> None:
         assert order2_res.json()["error"]["code"] == "NON_MEMBER_LIMIT_REACHED"
 
         # 5. Non-member cancels first order -> Stock is restored and non-member quota is freed!
-        cancel_res = await client.post(f"/api/v1/orders/{order1['order_id']}/cancel")
+        # cancelling needs the buyer or staff: orders are no longer open to anonymous cancel
+        anon_cancel = await client.post(f"/api/v1/orders/{order1['order_id']}/cancel")
+        assert anon_cancel.status_code == 401
+        cancel_res = await client.post(f"/api/v1/orders/{order1['order_id']}/cancel", headers=auth_headers)
         assert cancel_res.status_code == 200
         assert cancel_res.json()["status"] == "cancelled"
 

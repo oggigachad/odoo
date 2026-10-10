@@ -34,6 +34,8 @@ class Member(Base):
     email: Mapped[str] = mapped_column(Text, nullable=False)
     phone: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     joined_on: Mapped[datetime.date] = mapped_column(Date, nullable=False, default=datetime.date.today)
+    password_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    student_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
     leadership_roles: Mapped[List["LeadershipRole"]] = relationship(back_populates="member")
@@ -162,6 +164,7 @@ class Event(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     venue: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     starts_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    form_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Google Form etc. shown to ticket holders after payment
 
     ticket_types: Mapped[List["TicketType"]] = relationship(back_populates="event")
     expenses: Mapped[List["Expense"]] = relationship(back_populates="event")
@@ -173,10 +176,13 @@ class TicketType(Base):
     ticket_type_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     event_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("events.event_id"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False, default="General")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     member_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     non_member_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     seat_limit: Mapped[int] = mapped_column(Integer, nullable=False)
     non_member_seat_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_per_member: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_per_guest: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     event: Mapped["Event"] = relationship(back_populates="ticket_types")
     tickets: Mapped[List["Ticket"]] = relationship(back_populates="ticket_type")
@@ -240,8 +246,12 @@ class Product(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)  # non-member price
     member_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     non_member_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_per_member: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_per_guest: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
 
-    variants: Mapped[List["ProductVariant"]] = relationship(back_populates="product")
+    variants: Mapped[List["ProductVariant"]] = relationship(back_populates="product", order_by="ProductVariant.variant_id")
 
     __table_args__ = (
         CheckConstraint("price >= 0", name="chk_product_price"),
@@ -358,3 +368,17 @@ class Expense(Base):
         CheckConstraint("status IN ('submitted', 'approved', 'reimbursed', 'rejected')", name="chk_expense_status"),
         CheckConstraint("(status = 'reimbursed') = (reimbursed_at IS NOT NULL)", name="chk_expense_reimbursed_at"),
     )
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    notification_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    member_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("members.member_id"), nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    link: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=func.now())
+    read_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
