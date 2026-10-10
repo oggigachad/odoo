@@ -49,13 +49,13 @@ Status legend: ☐ todo · ◐ in progress · ☑ done. Update this file in the 
 ## Group M — Members and memberships (MEM)
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| M-01 ☐ | `POST /members` (self sign-up, rate-limited), `GET`, `PATCH`, search | A-03 | MEM-1, `DUPLICATE_EMAIL` |
-| M-02 ☐ | `GET /members/lookup` with active status | M-01 | MEM-4 under 300 ms |
-| M-03 ☐ | `POST /memberships`, `GET /members/{id}/memberships` | M-01 | Defaults end to 31 Dec |
+| M-01 ☑ | `POST /members` (self sign-up, rate-limited), `GET`, `PATCH`, search | A-03 | MEM-1, `DUPLICATE_EMAIL` |
+| M-02 ☑ | `GET /members/lookup` with active status | M-01 | MEM-4 under 300 ms |
+| M-03 ☑ | `POST /memberships`, `GET /members/{id}/memberships` | M-01 | Defaults end to 31 Dec |
 | M-04 ☐ | Cash payment service: insert `payments` and link target in one transaction | P-04 | MEM-2 cash path |
 | M-05 ☐ | Online dues payment endpoint | P-02, P-03 | MEM-2 online path |
 | M-06 ☐ | `GET /memberships/expiring` and `renewal_reminders` job | M-03, DB-02 | MEM-3 sends once |
-| M-07 ☐ | Leadership endpoints | A-03 | MEM-6 |
+| M-07 ☑ | Leadership endpoints | A-03 | MEM-6 |
 | M-08 ☐ | One-time members CSV import script with dry run | M-01 | Duplicates reported, none inserted twice |
 
 ## Group P — Payments
