@@ -28,6 +28,35 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 Log "API answers locally"
 
+# 3a. Tell the website where the API is now. The site reads frontend/public/config.js when it opens, so we update that file
+#     (and the committed build's copy) on GitHub; Netlify redeploys from GitHub by itself. Uses the GitHub login this PC
+#     already has for git; if there is none, the address is only written to current-api-url.txt.
+function Publish-ApiUrl([string]$url) {
+  try {
+    $remote = (git -C $PSScriptRoot remote get-url origin 2>$null)
+    if ($remote -notmatch 'github\.com[:/](?<repo>[^/]+/[^/.]+)') { Log "no GitHub remote: address not published"; return }
+    $repo = $Matches.repo
+    $cred = "protocol=https`nhost=github.com`n`n" | git credential fill 2>$null
+    $tok = (($cred | Where-Object { $_ -like 'password=*' } | Select-Object -First 1) -replace '^password=', '')
+    if (-not $tok) { Log "no stored GitHub login: address not published"; return }
+    $h = @{ Authorization = "Bearer $tok"; Accept = "application/vnd.github+json"; "User-Agent" = "skyline-autostart" }
+    $text = "// Where the Skyline API lives. deploy/autostart.ps1 rewrites this file (and dist/config.js) whenever the address changes.`nwindow.SKYLINE_CONFIG = { apiUrl: `"$url`" };`n"
+    foreach ($path in @("frontend/public/config.js", "frontend/dist/config.js")) {
+      $api = "https://api.github.com/repos/$repo/contents/$path"
+      $sha = $null
+      try {
+        $cur = Invoke-RestMethod -Uri "${api}?ref=main" -Headers $h
+        $sha = $cur.sha
+        if ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($cur.content -replace '\s', ''))) -eq $text) { continue }
+      } catch { }
+      $body = @{ message = "Point the site at the new API address [skip vercel]"; branch = "main"; content = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }
+      if ($sha) { $body.sha = $sha }
+      Invoke-RestMethod -Method Put -Uri $api -Headers $h -Body ($body | ConvertTo-Json) -ContentType "application/json" | Out-Null
+      Log "published $path -> $url"
+    }
+  } catch { Log "could not publish the address: $($_.Exception.Message)" }
+}
+
 # 3. Tunnel supervisor: keep one tunnel alive, record its address
 function Start-Tunnel {
   Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -36,7 +65,7 @@ function Start-Tunnel {
   for ($i = 0; $i -lt 40; $i++) {
     Start-Sleep 2
     $m = Select-String -Path $tunnelLog -Pattern 'https://[a-z0-9-]+\.trycloudflare\.com' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($m) { $u = $m.Matches[0].Value; Set-Content $urlFile $u; Log "tunnel up: $u"; return $p }
+    if ($m) { $u = $m.Matches[0].Value; Set-Content $urlFile $u; Log "tunnel up: $u"; Publish-ApiUrl $u; return $p }
   }
   Log "tunnel did not report an address"; return $p
 }
