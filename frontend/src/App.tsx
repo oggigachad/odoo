@@ -11,31 +11,50 @@ type Page = 'landing' | 'auth' | 'dashboard' | 'event'
 
 const RETURN_KEY = 'skyline_return_to'
 
-function eventIdFromHash(): number | null {
-  const m = window.location.hash.match(/^#event\/(\d+)/i)
-  return m ? Number(m[1]) : null
-}
-
-function pageFromHash(): Page | null {
-  if (eventIdFromHash() !== null) return 'event'
-  const hash = window.location.hash.toLowerCase()
-  if (hash.includes('dashboard')) return 'dashboard'
-  if (hash.includes('auth') || hash.includes('signin') || hash.includes('signup')) return 'auth'
+function eventIdFromUrl(): number | null {
+  const path = window.location.pathname || ''
+  const mPath = path.match(/^\/event\/(\d+)/i)
+  if (mPath) return Number(mPath[1])
+  const hash = window.location.hash || ''
+  const mHash = hash.match(/^#\/?event\/(\d+)/i)
+  if (mHash) return Number(mHash[1])
   return null
 }
 
+function pageFromUrl(): Page {
+  if (eventIdFromUrl() !== null) return 'event'
+  const path = (window.location.pathname || '').toLowerCase()
+  const hash = (window.location.hash || '').toLowerCase()
+  const loc = path + ' ' + hash
+  if (loc.includes('/dashboard') || hash.includes('dashboard')) return 'dashboard'
+  if (
+    loc.includes('/auth') || loc.includes('/login') || loc.includes('/signin') || loc.includes('/signup') ||
+    hash.includes('auth') || hash.includes('signin') || hash.includes('signup')
+  ) return 'auth'
+  return 'landing'
+}
+
 export default function App() {
-  const [page, setPage] = useState<Page>(() => pageFromHash() ?? 'landing')
+  const [page, setPage] = useState<Page>(() => pageFromUrl())
   const [user, setUser] = useState<UserAccount | null>(null)
-  const [eventId, setEventId] = useState<number | null>(() => eventIdFromHash())
+  const [eventId, setEventId] = useState<number | null>(() => eventIdFromUrl())
   // True while we validate a stored session with the server (never trust localStorage for the role)
   const [booting, setBooting] = useState<boolean>(() => !!getToken())
 
-  const go = useCallback((next: Page) => {
+  const go = useCallback((next: Page, targetEventId?: number | null) => {
+    const eid = targetEventId !== undefined ? targetEventId : eventId
+    if (targetEventId !== undefined) {
+      setEventId(targetEventId)
+    }
     setPage(next)
-    const hash = next === 'dashboard' ? '#dashboard' : next === 'auth' ? '#auth' : next === 'event' && eventId !== null ? `#event/${eventId}` : ''
-    if (window.location.hash !== hash) {
-      history.replaceState(null, '', window.location.pathname + window.location.search + hash)
+
+    let path = '/'
+    if (next === 'dashboard') path = '/dashboard'
+    else if (next === 'auth') path = '/auth'
+    else if (next === 'event' && eid !== null) path = `/event/${eid}`
+
+    if (window.location.pathname !== path || window.location.hash !== '') {
+      history.pushState(null, '', path)
     }
     window.scrollTo({ top: 0 })
   }, [eventId])
@@ -63,10 +82,18 @@ export default function App() {
     return () => setUnauthorizedHandler(null)
   }, [go])
 
+  // Listen to browser Back / Forward buttons and location changes
   useEffect(() => {
-    const onHash = () => { setEventId(eventIdFromHash()); const p = pageFromHash(); if (p) setPage(p); else if (!window.location.hash) setPage('landing') }
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
+    const onLocationChange = () => {
+      setEventId(eventIdFromUrl())
+      setPage(pageFromUrl())
+    }
+    window.addEventListener('popstate', onLocationChange)
+    window.addEventListener('hashchange', onLocationChange)
+    return () => {
+      window.removeEventListener('popstate', onLocationChange)
+      window.removeEventListener('hashchange', onLocationChange)
+    }
   }, [])
 
   // Route guard: the dashboard requires a verified session
@@ -79,11 +106,12 @@ export default function App() {
     setUser(u)
     let back: string | null = null
     try { back = sessionStorage.getItem(RETURN_KEY); sessionStorage.removeItem(RETURN_KEY) } catch { /* noop */ }
-    const m = back?.match(/^#event\/(\d+)/)
+    const m = back?.match(/^(?:#|\/)?event\/(\d+)/)
     if (m) {
-      setEventId(Number(m[1]))
+      const eid = Number(m[1])
+      setEventId(eid)
       setPage('event')
-      history.replaceState(null, '', window.location.pathname + back)
+      history.replaceState(null, '', `/event/${eid}`)
     } else {
       go('dashboard')
     }
@@ -122,7 +150,7 @@ export default function App() {
         eventId={eventId}
         user={user}
         onSignIn={() => {
-          try { sessionStorage.setItem(RETURN_KEY, `#event/${eventId}`) } catch { /* noop */ }
+          try { sessionStorage.setItem(RETURN_KEY, `/event/${eventId}`) } catch { /* noop */ }
           go('auth')
         }}
         onOpenTickets={() => go(user ? 'dashboard' : 'auth')}

@@ -171,7 +171,7 @@ def build_job_messages(job: dict[str, Any], recipients: list[str] | None = None)
                        f"Use this code to continue. It expires in 5 minutes.\n\n{job['otp']}\n\nIf you did not ask for it, you can ignore this email.",
                        "Your verification code", job["otp"])]
     if t == "magic_link":
-        link = f"{settings.FRONTEND_URL}/#auth?token={job['token']}"
+        link = f"{settings.FRONTEND_URL}/auth?token={job['token']}"
         return [_build(job["to"], "Your Skyline sign-in link", "Tap the button to sign in. The link works once and expires in 15 minutes.",
                        "Sign in to Skyline", None, ("Sign in", link))]
     if t == "renewal_reminder":
@@ -182,7 +182,7 @@ def build_job_messages(job: dict[str, Any], recipients: list[str] | None = None)
     if t == "event_reminder":
         return [_build(job["to"], f"Tomorrow: {job['title']}",
                        f"{job['title']} is on {job['when']}{(' at ' + job['venue']) if job.get('venue') else ''}.\n\n"
-                       "Bring your ticket QR (Dashboard, Events, My Tickets).", "See you tomorrow", None, ("Open my tickets", settings.FRONTEND_URL + "/#dashboard"))]
+                       "Bring your ticket QR (Dashboard, Events, My Tickets).", "See you tomorrow", None, ("Open my tickets", settings.FRONTEND_URL + "/dashboard"))]
     if t == "announcement_broadcast":
         return [_build(to, f"[Skyline] {job['title']}", job["body"], job["title"]) for to in (recipients or [])]
     logger.warning("Unknown email job type: %s", t)

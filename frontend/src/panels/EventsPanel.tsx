@@ -477,7 +477,7 @@ export default function EventsPanel({ memberId, memberName = '', memberEmail = '
                     <summary className="cursor-pointer text-[11px] font-semibold text-[#714B67] select-none">Manage event: prices, limits, QR, form link, delete</summary>
                     <div className="pt-3 space-y-3">
                       <div className="flex flex-wrap items-center gap-4 text-[11px]">
-                        <a href={`${API_BASE}/events/${ev.event_id}/qr.png`} download={`event-${ev.event_id}-qr.png`} target="_blank" rel="noreferrer"
+                        <a href={`${API_BASE}/events/${ev.event_id}/qr.png?origin=${encodeURIComponent(window.location.origin)}`} download={`event-${ev.event_id}-qr.png`} target="_blank" rel="noreferrer"
                           className="text-[#714B67] font-semibold hover:underline">Event QR (poster)</a>
                         <button onClick={async () => {
                           if (!window.confirm(`Delete "${ev.title}"? This cannot be undone.`)) return
@@ -496,7 +496,7 @@ export default function EventsPanel({ memberId, memberName = '', memberEmail = '
                             } catch (e: any) { setError(e?.message ?? 'Could not save the link.') }
                           }} className="px-2 py-1 rounded-md bg-[#714B67] text-white text-[10px] font-semibold border-none cursor-pointer">Save form link</button>
                         </span>
-                        <button onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/#event/${ev.event_id}`)}
+                        <button onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/event/${ev.event_id}`)}
                           className="text-[#714B67] font-semibold hover:underline bg-transparent border-none cursor-pointer p-0">Copy event link</button>
                       </div>
                       {ev.ticket_types.map(tt => (

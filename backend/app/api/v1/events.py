@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireAnnouncer, RequireOfficer, RequireOperator, get_current_member, get_optional_member, is_officer
@@ -327,10 +327,24 @@ async def delete_event(
 
 
 @router.get("/events/{event_id}/qr.png")
-async def event_qr_png(event_id: int, db: Annotated[AsyncSession, Depends(get_db)]) -> Response:
+async def event_qr_png(
+    event_id: int,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    origin: Annotated[str | None, Query()] = None,
+) -> Response:
     """Poster QR for an event. Scanning it on a phone opens the event page on the website, where tickets can be booked."""
+    from urllib.parse import urlparse
     from app.core.config import settings
 
     await EventService(db).get_event(event_id)  # 404 if the event does not exist
-    url = f"{settings.FRONTEND_URL.rstrip('/')}/#event/{event_id}"
+
+    raw_base = origin or request.headers.get("origin") or request.headers.get("referer")
+    if raw_base and raw_base.startswith(("http://", "https://")):
+        parsed = urlparse(raw_base)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+    else:
+        base = settings.FRONTEND_URL.rstrip("/")
+
+    url = f"{base}/event/{event_id}"
     return Response(content=render_qr_png(url, box_size=12), media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})

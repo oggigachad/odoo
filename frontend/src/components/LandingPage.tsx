@@ -1303,28 +1303,38 @@ export default function LandingPage({ onOpenAuth, currentUser, onOpenDashboard }
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState<'home' | 'fundraisers' | 'updates' | 'about'>('home')
 
-  // Sync hash routing so direct browser links work
+  // Sync routing so direct browser links work
   useEffect(() => {
-    const handleHash = () => {
-      const hash = window.location.hash.toLowerCase()
-      if (hash.includes('fundraisers')) {
+    const handleLocation = () => {
+      const path = (window.location.pathname || '').toLowerCase()
+      const hash = (window.location.hash || '').toLowerCase()
+      const loc = path + ' ' + hash
+      if (loc.includes('fundraisers')) {
         setCurrentPage('fundraisers')
-      } else if (hash.includes('announcements') || hash.includes('updates')) {
+      } else if (loc.includes('announcements') || loc.includes('updates')) {
         setCurrentPage('updates')
-      } else if (hash.includes('about')) {
+      } else if (loc.includes('about')) {
         setCurrentPage('about')
-      } else if (hash === '' || hash === '#') {
+      } else if (path === '/' && (hash === '' || hash === '#')) {
         setCurrentPage('home')
       }
     }
 
-    handleHash()
-    window.addEventListener('hashchange', handleHash)
-    return () => window.removeEventListener('hashchange', handleHash)
+    handleLocation()
+    window.addEventListener('popstate', handleLocation)
+    window.addEventListener('hashchange', handleLocation)
+    return () => {
+      window.removeEventListener('popstate', handleLocation)
+      window.removeEventListener('hashchange', handleLocation)
+    }
   }, [])
 
   const handleNavigate = (page: 'home' | 'fundraisers' | 'updates' | 'about') => {
     setCurrentPage(page)
+    const target = page === 'home' ? '/' : `/${page}`
+    if (window.location.pathname !== target || window.location.hash !== '') {
+      history.pushState(null, '', target)
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
