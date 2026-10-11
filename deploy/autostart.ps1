@@ -28,8 +28,8 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 Log "API answers locally"
 
-# 3a. Tell the website where the API is now. The site reads frontend/public/config.js when it opens, so we update that file
-#     (and the committed build's copy) on GitHub; Netlify redeploys from GitHub by itself. Uses the GitHub login this PC
+# 3a. Tell the website where the API is now. The site reads frontend/public/config.json when it opens, so we update that file
+#     (and the committed build's copy) on GitHub. The site reads the live copy from raw.githubusercontent.com when it opens. Uses the GitHub login this PC
 #     already has for git; if there is none, the address is only written to current-api-url.txt.
 function Publish-ApiUrl([string]$url) {
   try {
@@ -40,8 +40,8 @@ function Publish-ApiUrl([string]$url) {
     $tok = (($cred | Where-Object { $_ -like 'password=*' } | Select-Object -First 1) -replace '^password=', '')
     if (-not $tok) { Log "no stored GitHub login: address not published"; return }
     $h = @{ Authorization = "Bearer $tok"; Accept = "application/vnd.github+json"; "User-Agent" = "skyline-autostart" }
-    $text = "// Where the Skyline API lives. deploy/autostart.ps1 rewrites this file (and dist/config.js) whenever the address changes.`nwindow.SKYLINE_CONFIG = { apiUrl: `"$url`" };`n"
-    foreach ($path in @("frontend/public/config.js", "frontend/dist/config.js")) {
+    $text = "{`n  `"apiUrl`": `"$url`"`n}`n"
+    foreach ($path in @("frontend/public/config.json", "frontend/dist/config.json")) {
       $api = "https://api.github.com/repos/$repo/contents/$path"
       $sha = $null
       try {

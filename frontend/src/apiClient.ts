@@ -4,7 +4,7 @@
  * - Normalises every failure into an ApiError so panels can just show `err.message`.
  */
 
-// The API address is read when the page opens (public/config.js), so it can change without rebuilding the site; the build-time VITE_API_URL is the fallback.
+// The API address is read when the page opens (config.json, found by runtimeConfig.ts), so it can change without rebuilding the site; the build-time VITE_API_URL is the fallback.
 const RUNTIME_API: string = ((window as any).SKYLINE_CONFIG?.apiUrl as string) || ''
 const HOST: string = (RUNTIME_API || ((import.meta as any).env?.VITE_API_URL as string) || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
 export const API_ORIGIN: string = HOST

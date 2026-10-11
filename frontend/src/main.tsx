@@ -1,13 +1,19 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App'
+import { loadRuntimeConfig } from './runtimeConfig'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+// Work out where the API is first; the app (and its API client) is only loaded afterwards.
+loadRuntimeConfig()
+  .catch(() => undefined)
+  .then(() => import('./App'))
+  .then(({ default: App }) => {
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+  })
 
 // Installable app: register the service worker (production builds only, so dev hot-reload is never cached)
 if ('serviceWorker' in navigator && (import.meta as any).env?.PROD) {
