@@ -19,6 +19,7 @@ from app.api.v1.online_payments import router as online_payments_router
 from app.api.v1.report_center import router as report_center_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.shop import router as shop_router
+from app.api.v1.polls import router as polls_router
 from app.api.v1.system import router as system_router
 from app.api.v1.webhooks import router as webhooks_router
 from app.core.config import settings
@@ -142,7 +143,7 @@ app.include_router(finance_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(reports_router, prefix="/api/v1")
-for _r in (admin_router, notifications_router, online_payments_router, report_center_router):
+for _r in (admin_router, notifications_router, online_payments_router, report_center_router, polls_router):
     app.include_router(_r, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
 

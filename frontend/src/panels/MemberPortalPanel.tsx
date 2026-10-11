@@ -1,20 +1,18 @@
-import { Check, X } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Award,
-  Sparkles,
-  Download,
-  Calendar,
   Vote,
   Users,
   ShieldCheck,
   CheckCircle2,
   ExternalLink,
-  BookOpen,
   ArrowRight,
   QrCode,
+  X,
 } from 'lucide-react'
 import type { UserAccount } from '../authService'
+import { api, API_BASE, getToken, errorMessage } from '../apiClient'
+import { useLiveRefresh } from '../useRealtimeUpdates'
 
 interface Props {
   user: UserAccount
@@ -22,35 +20,70 @@ interface Props {
   onGoToShop?: () => void
 }
 
+interface PollOption {
+  option_id: number
+  label: string
+  display_order: number
+  votes: number
+}
+
+interface PollData {
+  poll_id: number
+  title: string
+  description?: string | null
+  is_active: boolean
+  total_votes: number
+  options: PollOption[]
+  user_voted_option_id?: number | null
+}
+
 const FONT = { fontFamily: '"TT Firs Neue", sans-serif' }
 
-export default function MemberPortalPanel({ user, onGoToEvents, onGoToShop }: Props) {
-  const [selectedVaultTab, setSelectedVaultTab] = useState<'study' | 'career' | 'projects'>('study')
-  const [votedPoll, setVotedPoll] = useState<string | null>(null)
+export default function MemberPortalPanel({ user, onGoToEvents }: Props) {
   const [showQrModal, setShowQrModal] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
 
-  // Exclusive Academic Vault resources
-  const vaultResources = {
-    study: [
-      { id: 1, title: 'Operating Systems & Concurrency — Exam Archive 2025-26', type: 'PDF', size: '4.2 MB', downloads: 142 },
-      { id: 2, title: 'Distributed Systems & Microservices Cheatsheet', type: 'PDF', size: '2.1 MB', downloads: 98 },
-      { id: 3, title: 'Algorithms & Data Structures Problem Bank (Solved)', type: 'PDF', size: '5.8 MB', downloads: 215 },
-    ],
-    career: [
-      { id: 4, title: 'Skyline Member Resume Template (LaTeX + Docx)', type: 'ZIP', size: '1.4 MB', downloads: 310 },
-      { id: 5, title: 'Technical Interview Prep Handbook (2026 Edition)', type: 'PDF', size: '3.6 MB', downloads: 189 },
-      { id: 6, title: 'Referral Directory — Alumni at Google, Microsoft, Odoo', type: 'DOC', size: '820 KB', downloads: 275 },
-    ],
-    projects: [
-      { id: 7, title: 'Autonomous Quadcopter Firmware Blueprint (C++)', type: 'REPO', size: '12 MB', downloads: 84 },
-      { id: 8, title: 'Campus Roommate & Housing Matching Engine (FastAPI/React)', type: 'REPO', size: '8.4 MB', downloads: 120 },
-      { id: 9, title: 'High-Frequency FinTech Backtester Source Code', type: 'REPO', size: '6.7 MB', downloads: 140 },
-    ],
-  }
+  // Dynamic Poll State from Backend
+  const [poll, setPoll] = useState<PollData | null>(null)
+  const [pollLoading, setPollLoading] = useState(true)
+  const [pollVoting, setPollVoting] = useState(false)
+  const [pollError, setPollError] = useState<string | null>(null)
+  const [voteSuccess, setVoteSuccess] = useState<string | null>(null)
 
-  const handleVote = (option: string) => {
-    setVotedPoll(option)
+  const loadPoll = useCallback(async () => {
+    try {
+      const data = await api<PollData | null>('/polls/active')
+      setPoll(data)
+    } catch {
+      // offline or network issue
+    } finally {
+      setPollLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadPoll()
+  }, [loadPoll])
+
+  useLiveRefresh(['dashboard', 'members'], loadPoll)
+
+  const handleVote = async (optionId: number) => {
+    if (!poll || pollVoting) return
+    setPollVoting(true)
+    setPollError(null)
+    try {
+      const updated = await api<PollData>(`/polls/${poll.poll_id}/vote`, {
+        method: 'POST',
+        body: JSON.stringify({ option_id: optionId }),
+      })
+      setPoll(updated)
+      setVoteSuccess('Your vote has been officially recorded in the database!')
+      setTimeout(() => setVoteSuccess(null), 5000)
+    } catch (e: any) {
+      setPollError(errorMessage(e, 'Could not cast vote. Active paid membership required.'))
+    } finally {
+      setPollVoting(false)
+    }
   }
 
   const handleCopyInvite = () => {
@@ -58,6 +91,9 @@ export default function MemberPortalPanel({ user, onGoToEvents, onGoToShop }: Pr
     setCopiedLink(true)
     setTimeout(() => setCopiedLink(false), 3000)
   }
+
+  const token = getToken() ?? ''
+  const qrPassUrl = `${API_BASE}/members/${user.memberId}/pass-qr.png?token=${encodeURIComponent(token)}`
 
   return (
     <div style={FONT} className="space-y-6 animate-fadeIn pb-12">
@@ -95,7 +131,7 @@ export default function MemberPortalPanel({ user, onGoToEvents, onGoToShop }: Pr
               <div className="text-sm font-black truncate">{user.name}</div>
               <div className="text-[11px] text-white/70 font-mono">ID: {user.studentId || `SKY-${user.memberId}`}</div>
               <div className="text-[10px] text-white/60">
-                Valid: {user.validUntil ? new Date(user.validUntil).toLocaleDateString() : 'Current Semester 2026'}
+                Valid: {user.validUntil ? new Date(user.validUntil).toLocaleDateString() : (user.isActive ? 'Active Semester Member' : 'Pending Activation')}
               </div>
             </div>
             <div className="mt-3 pt-2 border-t border-white/15 flex items-center justify-between text-[10px] text-white/80">
@@ -108,7 +144,7 @@ export default function MemberPortalPanel({ user, onGoToEvents, onGoToShop }: Pr
         </div>
       </div>
 
-      {/* QR Code Modal */}
+      {/* QR Code Modal - Real Dynamic QR Pass */}
       {showQrModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white text-neutral-900 rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl animate-scaleIn">
@@ -122,34 +158,27 @@ export default function MemberPortalPanel({ user, onGoToEvents, onGoToShop }: Pr
               </button>
             </div>
             <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200 inline-block">
-              {/* Simulated QR Matrix */}
-              <div className="w-48 h-48 bg-neutral-900 rounded-xl p-2 flex flex-col justify-between items-center text-white">
-                <div className="w-full flex justify-between">
-                  <div className="w-10 h-10 border-4 border-white rounded-lg flex items-center justify-center">
-                    <div className="w-4 h-4 bg-white rounded-sm" />
-                  </div>
-                  <div className="w-10 h-10 border-4 border-white rounded-lg flex items-center justify-center">
-                    <div className="w-4 h-4 bg-white rounded-sm" />
-                  </div>
-                </div>
-                <div className="text-center font-mono text-[10px] tracking-widest text-[#38bdf8] py-2">
-                  SKYLINE-MEMBER-{user.memberId}
-                </div>
-                <div className="w-full flex justify-between">
-                  <div className="w-10 h-10 border-4 border-white rounded-lg flex items-center justify-center">
-                    <div className="w-4 h-4 bg-white rounded-sm" />
-                  </div>
-                  <div className="w-8 h-8 bg-emerald-400 rounded-full flex items-center justify-center text-neutral-900 font-bold text-xs">
-                    <Check className="w-4 h-4" />
-                  </div>
-                </div>
+              {/* Dynamic Scannable QR Code */}
+              <div className="w-48 h-48 bg-white rounded-xl p-2 flex items-center justify-center border border-neutral-200 shadow-sm">
+                <img
+                  src={qrPassUrl}
+                  alt={`Digital Pass for ${user.name}`}
+                  className="w-44 h-44 object-contain"
+                  onError={(e) => {
+                    // Fallback to text if network glitch
+                    (e.target as HTMLImageElement).style.display = 'none'
+                  }}
+                />
+              </div>
+              <div className="text-center font-mono text-[10px] tracking-widest text-[#714B67] font-bold py-2">
+                SKYLINE-MEMBER-{user.memberId}
               </div>
             </div>
             <div>
               <h4 className="font-bold text-base text-neutral-900">{user.name}</h4>
               <p className="text-xs text-neutral-500 font-mono">Member #{user.memberId} · {user.email}</p>
               <p className="text-[11px] text-emerald-600 font-semibold mt-1">
-                Show at door for instant QR door check-in & free member kit.
+                Show at door for instant QR door check-in & member benefits.
               </p>
             </div>
             <button
@@ -169,8 +198,8 @@ export default function MemberPortalPanel({ user, onGoToEvents, onGoToShop }: Pr
             <Award className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-xs font-bold text-neutral-900">50% Ticket Discount</div>
-            <div className="text-[11px] text-neutral-500 mt-0.5">Applied automatically when purchasing event passes.</div>
+            <div className="text-xs font-bold text-neutral-900">Member Ticket Pricing</div>
+            <div className="text-[11px] text-neutral-500 mt-0.5">Exclusive discounted rates applied automatically at checkout.</div>
             {onGoToEvents && (
               <button
                 onClick={onGoToEvents}
@@ -183,13 +212,18 @@ export default function MemberPortalPanel({ user, onGoToEvents, onGoToShop }: Pr
         </div>
 
         <div className="p-4 rounded-2xl bg-white border border-neutral-200 shadow-sm flex items-start gap-3">
-          <div className="p-2.5 rounded-xl bg-sky-100 text-sky-600 shrink-0">
-            <BookOpen className="w-5 h-5" />
+          <div className="p-2.5 rounded-xl bg-purple-100 text-[#714B67] shrink-0">
+            <QrCode className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-xs font-bold text-neutral-900">Academic & Project Vault</div>
-            <div className="text-[11px] text-neutral-500 mt-0.5">Past exams, solved solutions, and project source codes.</div>
-            <span className="text-[11px] font-bold text-sky-600 mt-1.5 inline-block">Included with membership</span>
+            <div className="text-xs font-bold text-neutral-900">Digital QR Pass</div>
+            <div className="text-[11px] text-neutral-500 mt-0.5">Instant door check-in at club events and meetings.</div>
+            <button
+              onClick={() => setShowQrModal(true)}
+              className="text-[11px] font-bold text-[#714B67] hover:underline mt-1.5 flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer"
+            >
+              Show Pass <ArrowRight className="w-3 h-3" />
+            </button>
           </div>
         </div>
 
@@ -221,137 +255,121 @@ export default function MemberPortalPanel({ user, onGoToEvents, onGoToShop }: Pr
         </div>
       </div>
 
-      {/* Main Grid: Academic Vault & Governance Poll */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Academic Vault (2 cols) */}
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-base font-bold text-neutral-900 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#714B67]" />
-                Skyline Academic & Career Vault
-              </h3>
-              <p className="text-xs text-neutral-500">Curated specifically for verified club members.</p>
-            </div>
-
-            {/* Tab switch */}
-            <div className="flex p-1 rounded-xl bg-neutral-100 border border-neutral-200 text-xs font-bold">
-              <button
-                onClick={() => setSelectedVaultTab('study')}
-                className={`px-3 py-1 rounded-lg border-none cursor-pointer transition-all ${
-                  selectedVaultTab === 'study' ? 'bg-white text-[#714B67] shadow-sm' : 'bg-transparent text-neutral-600'
-                }`}
-              >
-                Exam Banks
-              </button>
-              <button
-                onClick={() => setSelectedVaultTab('career')}
-                className={`px-3 py-1 rounded-lg border-none cursor-pointer transition-all ${
-                  selectedVaultTab === 'career' ? 'bg-white text-[#714B67] shadow-sm' : 'bg-transparent text-neutral-600'
-                }`}
-              >
-                Career & Resumes
-              </button>
-              <button
-                onClick={() => setSelectedVaultTab('projects')}
-                className={`px-3 py-1 rounded-lg border-none cursor-pointer transition-all ${
-                  selectedVaultTab === 'projects' ? 'bg-white text-[#714B67] shadow-sm' : 'bg-transparent text-neutral-600'
-                }`}
-              >
-                Code Blueprints
-              </button>
-            </div>
+      {/* Club Governance & Polls (Dynamic from database) */}
+      <div className="bg-white rounded-3xl border border-neutral-200 p-6 sm:p-8 shadow-sm space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-neutral-900 flex items-center gap-2">
+              <Vote className="w-5 h-5 text-[#714B67]" />
+              Official Member Voting Ballot
+            </h3>
+            <p className="text-xs text-neutral-500 mt-0.5">
+              Live semester poll stored and tallied directly in the club database.
+            </p>
           </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold self-start sm:self-auto">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span>Verified Paid Member Voting Rights</span>
+          </div>
+        </div>
 
-          <div className="divide-y divide-neutral-100">
-            {vaultResources[selectedVaultTab].map((res) => (
-              <div key={res.id} className="py-3.5 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-neutral-100 text-neutral-700 flex items-center justify-center text-[10px] font-black">
-                    {res.type}
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-neutral-900">{res.title}</div>
-                    <div className="text-[11px] text-neutral-500">
-                      {res.size} · {res.downloads} member downloads
-                    </div>
-                  </div>
+        {pollLoading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-7 h-7 rounded-full border-2 border-[#714B67] border-t-transparent animate-spin" />
+          </div>
+        ) : !poll ? (
+          <div className="text-center py-10 bg-neutral-50 rounded-2xl border border-neutral-200">
+            <Vote className="w-8 h-8 text-neutral-400 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-neutral-700">No Active Polls Right Now</p>
+            <p className="text-xs text-neutral-500 mt-1">Check back soon when executive officers publish the next semester ballot.</p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="p-5 rounded-2xl bg-neutral-50 border border-neutral-200 space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full">
+                  Semester Ballot #{poll.poll_id}
+                </span>
+                <span className="text-xs font-semibold text-neutral-500">
+                  {poll.total_votes} {poll.total_votes === 1 ? 'vote cast' : 'total votes cast'}
+                </span>
+              </div>
+              <h4 className="text-sm sm:text-base font-bold text-neutral-900">
+                {poll.title}
+              </h4>
+              {poll.description && (
+                <p className="text-xs text-neutral-600 leading-relaxed">
+                  {poll.description}
+                </p>
+              )}
+
+              {pollError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
+                  {pollError}
                 </div>
+              )}
+              {voteSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{voteSuccess}</span>
+                </div>
+              )}
 
-                <a
-                  href={`#download-${res.id}`}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    alert(`Downloading "${res.title}"... Exclusive member benefit verified.`)
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-neutral-100 hover:bg-[#714B67] text-neutral-700 hover:text-white text-xs font-bold transition-colors flex items-center gap-1.5 text-decoration-none"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download</span>
-                </a>
+              <div className="space-y-3 pt-2">
+                {poll.options.map((opt) => {
+                  const isSelected = poll.user_voted_option_id === opt.option_id
+                  const pct = poll.total_votes > 0 ? Math.round((opt.votes / poll.total_votes) * 100) : 0
+                  return (
+                    <div key={opt.option_id} className="space-y-1.5">
+                      <button
+                        type="button"
+                        disabled={pollVoting}
+                        onClick={() => handleVote(opt.option_id)}
+                        className={`w-full p-3.5 rounded-2xl border text-left text-xs font-semibold transition-all cursor-pointer flex items-center justify-between relative overflow-hidden ${
+                          isSelected
+                            ? 'bg-[#714B67] text-white border-[#714B67] shadow-md'
+                            : 'bg-white text-neutral-800 border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50/80'
+                        }`}
+                      >
+                        <span className="relative z-10 flex items-center gap-2">
+                          <span>{opt.label}</span>
+                          {isSelected && (
+                            <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-bold">
+                              Your Choice
+                            </span>
+                          )}
+                        </span>
+                        <div className="relative z-10 flex items-center gap-3 shrink-0">
+                          <span className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-neutral-500'}`}>
+                            {opt.votes} ({pct}%)
+                          </span>
+                          {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                        </div>
+                      </button>
+
+                      {/* Dynamic Vote Tally Progress Bar */}
+                      <div className="h-1.5 w-full bg-neutral-200 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            isSelected ? 'bg-[#714B67]' : 'bg-neutral-400'
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Club Governance & Polls (1 col) */}
-        <div className="bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm space-y-4">
-          <div className="flex items-center gap-2">
-            <Vote className="w-4 h-4 text-[#714B67]" />
-            <h3 className="text-base font-bold text-neutral-900">Member Voting Ballot</h3>
-          </div>
-          <p className="text-xs text-neutral-500">
-            Cast your vote as an active semester member. Decisions determine club semester funding allocation.
-          </p>
-
-          <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 space-y-3">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
-              Semester Poll #12
-            </span>
-            <div className="text-xs font-bold text-neutral-900">
-              Which flagship workshop theme should Skyline prioritize next month?
             </div>
 
-            <div className="space-y-2 pt-1">
-              {[
-                { key: 'ai', label: 'Autonomous AI Agents & Local LLMs', votes: 68 },
-                { key: 'fintech', label: 'Algorithmic Trading & FinTech Systems', votes: 45 },
-                { key: 'cloud', label: 'Kubernetes & Production Cloud Infrastructure', votes: 31 },
-              ].map((opt) => {
-                const isSelected = votedPoll === opt.key
-                return (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => handleVote(opt.key)}
-                    className={`w-full p-2.5 rounded-xl border text-left text-xs font-semibold transition-all cursor-pointer flex items-center justify-between ${
-                      isSelected
-                        ? 'bg-[#714B67] text-white border-[#714B67]'
-                        : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-300'
-                    }`}
-                  >
-                    <span>{opt.label}</span>
-                    {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
-                  </button>
-                )
-              })}
-            </div>
-
-            {votedPoll && (
-              <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Your ballot has been officially tallied!</span>
-              </div>
-            )}
-          </div>
-
-          <div className="p-3 rounded-2xl bg-neutral-50 border border-neutral-200 flex items-center gap-3">
-            <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-            <div className="text-[11px] text-neutral-600">
-              Only verified paid members can cast votes. Guest votes are automatically blocked by the server.
+            <div className="p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200 flex items-center gap-3 text-xs text-neutral-600">
+              <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+              <span>
+                Votes are validated cryptographically against your member ID and stored permanently in PostgreSQL.
+              </span>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )

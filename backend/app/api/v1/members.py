@@ -1,11 +1,13 @@
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireAdmin, RequireOfficer, get_current_member, is_officer
+from app.api.deps import RequireAdmin, RequireOfficer, get_current_member, get_optional_member, is_officer
 from app.core.database import get_db
 from app.core.errors import ForbiddenError
+from app.core.security import decode_session_token
+from app.services.ticket_pdf import render_qr_png
 from app.schemas.auth import MemberInfo
 from app.schemas.members import (
     LeadershipRoleCreate,
@@ -217,3 +219,27 @@ async def delete_leadership_role(
     """Admin removes a position."""
     service = MemberService(db)
     await service.remove_leadership(leadership_role_id)
+
+
+@router.get("/members/{member_id}/pass-qr.png")
+async def get_member_pass_qr(
+    member_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[Optional[MemberInfo], Depends(get_optional_member)] = None,
+    token: Annotated[Optional[str], Query()] = None,
+) -> Response:
+    """Render a dynamic, scannable PNG QR pass for the member's digital card."""
+    caller_id: Optional[int] = None
+    if user:
+        caller_id = user.member_id
+    elif token:
+        try:
+            caller_id = decode_session_token(token)
+        except Exception:
+            pass
+    if not caller_id or (caller_id != member_id and (not user or not check_is_officer(user))):
+        raise ForbiddenError("You can only access your own pass.")
+    member = await MemberService(db).get_member(member_id)
+    payload = f"SKYLINE-MEMBER-{member.member_id}-{member.student_id or member.email}"
+    png_bytes = render_qr_png(payload, box_size=8)
+    return Response(content=png_bytes, media_type="image/png")

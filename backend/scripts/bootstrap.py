@@ -62,11 +62,34 @@ DDL = [
         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         read_at         TIMESTAMPTZ
     )""",
-    "CREATE INDEX IF NOT EXISTS notifications_member_idx ON notifications (member_id, created_at DESC)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedupe_uq ON notifications (member_id, kind, ref) WHERE ref IS NOT NULL",
+    """CREATE TABLE IF NOT EXISTS polls (
+        poll_id     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        title       TEXT        NOT NULL,
+        description TEXT,
+        is_active   BOOLEAN     NOT NULL DEFAULT true,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    """CREATE TABLE IF NOT EXISTS poll_options (
+        option_id     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        poll_id       BIGINT NOT NULL REFERENCES polls (poll_id) ON DELETE CASCADE,
+        label         TEXT   NOT NULL,
+        display_order INT    NOT NULL DEFAULT 0
+    )""",
+    """CREATE TABLE IF NOT EXISTS poll_votes (
+        vote_id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        poll_id    BIGINT NOT NULL REFERENCES polls (poll_id) ON DELETE CASCADE,
+        option_id  BIGINT NOT NULL REFERENCES poll_options (option_id) ON DELETE CASCADE,
+        member_id  BIGINT NOT NULL REFERENCES members (member_id) ON DELETE CASCADE,
+        voted_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (poll_id, member_id)
+    )""",
+    "CREATE INDEX IF NOT EXISTS poll_options_poll_idx ON poll_options (poll_id)",
+    "CREATE INDEX IF NOT EXISTS poll_votes_poll_idx ON poll_votes (poll_id)",
+    "CREATE INDEX IF NOT EXISTS poll_votes_member_idx ON poll_votes (member_id)",
 ]
 
 TABLES = (
+    "poll_votes, poll_options, polls, "
     "order_items, orders, tickets, ticket_types, events, announcements, expenses, fundraiser_tasks, "
     "fundraisers, memberships, payments, membership_types, semesters, product_variants, products, "
     "leadership_roles, notifications, members"
