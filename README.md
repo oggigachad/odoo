@@ -4,7 +4,7 @@
 
 One installable web app for a student club's **events, members and money**.
 
-**Live site:** [oddoskyline.netlify.app](https://oddoskyline.netlify.app)
+## **Live site:** [oddoskyline.netlify.app](https://oddoskyline.netlify.app)
 
 Prepared 11 October 2026 from the repository **github.com/oggigachad/odoo** (commit `d76b2b1`), the live site **oddoskyline.netlify.app** and the team's Full Project Report.
 Stack: FastAPI, PostgreSQL 16, Redis 7, MinIO, Razorpay, React 19 + Vite, Docker, Caddy.
